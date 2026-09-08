@@ -1,11 +1,12 @@
 import cors from "cors";
 import express, { type Express } from "express";
-import rateLimit from "express-rate-limit";
 import helmet from "helmet";
-
-import { env } from "./config/env";
-import { errorHandler, notFoundHandler } from "./middlewares/errorHandler";
-import { apiRouter } from "./routes";
+import { AppError } from "./app/errors/AppError";
+import { globalErrorHandler } from "./app/errors/globalErrorHandler";
+import { apiRateLimiter } from "./app/middlewares/rateLimiter";
+import { apiRoutes } from "./app/routes";
+import { sendSuccess } from "./app/utils/sendResponse";
+import { env } from "./config";
 
 const app: Express = express();
 
@@ -15,9 +16,15 @@ app.use(helmet());
 // CORS
 app.use(
   cors({
-    origin: env.CLIENT_URL?.split(",") ?? "*",
+    origin: env.CLIENT_URL ? env.CLIENT_URL.split(",") : "*",
     credentials: true,
   }),
+);
+
+// Stripe webhook must receive the RAW body (Buffer) to verify signatures.
+app.use(
+  "/api/v1/payments/webhook",
+  express.raw({ type: ["application/json", "application/x-www-form-urlencoded"] }),
 );
 
 // Body parsing
@@ -25,25 +32,22 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Global rate limiting
-export const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 200,
-  standardHeaders: "draft-7",
-  legacyHeaders: false,
-  message: { success: false, message: "Too many requests, please try again later.", errors: [] },
-});
-app.use("/api", generalLimiter);
+app.use("/api", apiRateLimiter);
 
-// Versioned routes
-app.use("/api/v1", apiRouter);
-
-// Health check at root too (useful for Vercel)
+// Root health checks
 app.get("/health", (_req, res) => {
-  res.status(200).json({ success: true, message: "Healthy", data: { status: "OK" } });
+  sendSuccess(res, "Courier & Logistics API is healthy", { status: "OK", env: env.NODE_ENV });
 });
 
-// 404 + centralized error handler
-app.use(notFoundHandler);
-app.use(errorHandler);
+// Versioned API routes
+app.use("/api/v1", apiRoutes);
+
+// 404 catch-all
+app.use((req, _res, next) => {
+  next(new AppError(404, `Route not found: ${req.method} ${req.originalUrl}`));
+});
+
+// Centralized error handler (must be last)
+app.use(globalErrorHandler);
 
 export { app };
