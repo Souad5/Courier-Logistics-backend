@@ -44,7 +44,8 @@ Last Updated: 2026-09-09
 ## 3. Implemented API Endpoints Tracker (Target: 20+, 24 implemented)
 Format: `[HTTP METHOD] [ENDPOINT] - [Status: Done/Pending] - [Roles Allowed]`
 
-- [x] GET `/api/v1/health` - Done - Public
+- [x] GET `/` - Done - Public (API root/version info)
+- [x] GET `/health` - Done - Public (health check)
 - [x] GET `/api/v1/` - Done - Public (API root/version info)
 - [x] POST `/api/v1/auth/register` - Done - Public (self-registers CUSTOMER/COURIER only)
 - [x] POST `/api/v1/auth/login` - Done - Public (rate-limited)

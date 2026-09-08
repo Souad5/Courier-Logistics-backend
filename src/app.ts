@@ -34,7 +34,15 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 // Global rate limiting
 app.use("/api", apiRateLimiter);
 
-// Root health checks
+// Root info and health checks
+app.get("/", (_req, res) => {
+  sendSuccess(res, "Courier & Logistics Management Platform API", {
+    version: "v1",
+    baseUrl: "/api/v1",
+    modules: ["auth", "users", "hubs", "parcels", "payments", "admin"],
+  });
+});
+
 app.get("/health", (_req, res) => {
   sendSuccess(res, "Courier & Logistics API is healthy", { status: "OK", env: env.NODE_ENV });
 });
