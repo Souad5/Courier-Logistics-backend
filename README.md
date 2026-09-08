@@ -1,4 +1,4 @@
-# B7A6 Courier & Logistics Management Platform 🚚
+# Courier & Logistics Management Platform 🚚
 
 Backend-only REST API for a Courier & Logistics Management Platform.
 
