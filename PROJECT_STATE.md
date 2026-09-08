@@ -83,7 +83,7 @@ Format: `[HTTP METHOD] [ENDPOINT] - [Status: Done/Pending] - [Roles Allowed]`
 
 ## 5. Next Planned Actions (Todo List)
 1. `git push origin main` from the user's machine (sandbox has no GitHub credentials) - 24 commits ready, fast-forward.
-2. Run `prisma migrate dev` + `npm run seed` against a live Postgres and smoke-test all 24 endpoints end-to-end.
+2. Run `prisma migrate dev` + `npm run seed` against a live Postgres and smoke-test all 24 endpoints end-to-end. BLOCKED in this sandbox: `DATABASE_URL` is a Neon pooler (`ep-wandering-bread-axw6mq11-pooler.c-4.us-east-2.aws.neon.tech`); DNS resolves but TCP/TLS :5432 times out (sandbox egress restricted) → Prisma error `Connection Closed`. Must run on the user's machine (wake the Neon instance if paused, or drop `channel_binding=require` / `connect_timeout` if the pooler rejects us).
 3. (Optional) Write unit/integration tests (vitest/jest) for auth, parcel transitions, fee calc, and webhook idempotency.
 4. (Optional) Add email-verification flow (`isEmailVerified` field exists; register message mentions verification but no emailer wired yet).
 5. (Optional) Deploy to Vercel/Render and configure Stripe webhook to the public URL.
