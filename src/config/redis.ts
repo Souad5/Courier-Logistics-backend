@@ -1,6 +1,6 @@
 import { Redis } from "ioredis";
 
-import { env } from "../config/env";
+import { env } from "./index";
 
 let redis: Redis | null = null;
 
@@ -9,7 +9,7 @@ export function getRedis(): Redis | null {
   if (!env.REDIS_URL) return null;
   redis = new Redis(env.REDIS_URL);
   redis.on("error", (err) => {
-    console.error("⚠️ Redis error (falling back to no-cache):", err.message);
+    console.error("⚠️ Redis unavailable (running without cache):", err.message);
   });
   return redis;
 }
@@ -26,8 +26,8 @@ export async function cacheSet(key: string, value: string, ttlSeconds = 300): Pr
   await client.set(key, value, "EX", ttlSeconds);
 }
 
-export async function cacheDel(...keys: string[]): Promise<void> {
+export async function cacheDelete(...keys: string[]): Promise<void> {
   const client = getRedis();
   if (!client) return;
-  if (keys.length) await client.del(...keys);
+  if (keys.length > 0) await client.del(...keys);
 }
