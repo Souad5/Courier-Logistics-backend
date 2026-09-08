@@ -1,6 +1,8 @@
 // ─────────────────────────────────────────────────────────────
-// B7A6 Courier & Logistics Management Platform — Prisma Schema
-// PostgreSQL driver. Strictly 3 roles: ADMIN, COURIER, CUSTOMER
+// B7A6 Courier & Logistics Platform — Prisma Schema (PostgreSQL)
+// Models: User, Hub, Parcel, ParcelStatusHistory, Payment, AuditLog
+// 3 strict roles: ADMIN, COURIER, CUSTOMER
+// Soft deletes via `isDeleted Boolean @default(false)`
 // ─────────────────────────────────────────────────────────────
 
 generator client {
@@ -15,13 +17,13 @@ datasource db {
 // ── Enums ─────────────────────────────────────────────────────
 
 enum Role {
-  ADMIN
-  COURIER
   CUSTOMER
+  COURIER
+  ADMIN
 }
 
 enum AuthProvider {
-  EMAIL
+  LOCAL
   GOOGLE
 }
 
@@ -31,50 +33,25 @@ enum UserStatus {
   BANNED
 }
 
-enum ShipmentStatus {
-  // Manual creation: shipment record created, awaiting pickup request/assignment
-  CREATED
-  // Customer has raised a pickup request
-  PICKUP_REQUESTED
-  // Courier assigned to collect the parcel
-  COURIER_ASSIGNED
-  // Parcel successfully picked up from sender
-  PICKED_UP
-  // Parcel received & scanned into the origin hub
-  AT_ORIGIN_HUB
-  // Parcel is moving between hubs / with courier
-  IN_TRANSIT
-  // Hub-to-hub transfer between origin and destination
-  HUB_TRANSFER
-  // Parcel reached the destination hub
-  AT_DESTINATION_HUB
-  // Courier is out delivering to receiver
-  OUT_FOR_DELIVERY
-  // Successfully handed over to the receiver
+enum ParcelStatus {
+  PENDING // created, awaiting payment
+  ACCEPTED // paid + courier assigned
+  PICKED_UP // courier collected the parcel
+  IN_TRANSIT // moving between hubs / to destination
+  OUT_FOR_DELIVERY // courier heading to receiver
   DELIVERED
-  // Delivery attempt failed (receiver absent, wrong address, etc.)
-  FAILED_DELIVERY
-  // Parcel is being returned to the sender
-  RETURN_TO_SENDER
-  RETURNED_TO_SENDER
   CANCELLED
 }
 
-enum PickupRequestStatus {
-  PENDING
-  ASSIGNED
-  PICKED_UP
-  FAILED
-  CANCELLED
-}
-
-enum ShipmentType {
+enum ParcelType {
   DOCUMENT
   PARCEL
   FRAGILE
   PERISHABLE
-  ECONOMY
-  EXPRESS
+}
+
+enum PaymentMethod {
+  STRIPE
 }
 
 enum PaymentStatus {
@@ -82,266 +59,191 @@ enum PaymentStatus {
   PAID
   FAILED
   REFUNDED
-  CANCELLED
-}
-
-enum PaymentMethod {
-  STRIPE
+  CANCELED
 }
 
 enum AuditAction {
-  CREATED
-  UPDATED
-  STATUS_CHANGED
-  ROLE_CHANGED
-  DELETED
+  REGISTER
   LOGIN
+  GOOGLE_LOGIN
   LOGOUT
-  PAYMENT
-  ASSIGNMENT
-}
-
-enum AccountType {
-  INDIVIDUAL
-  BUSINESS
+  ROLE_CHANGED
+  PARCEL_CREATED
+  PARCEL_STATUS_CHANGED
+  PARCEL_ASSIGNED
+  PARCEL_DELETED
+  PAYMENT_CREATED
+  PAYMENT_VERIFIED
+  PAYMENT_FAILED
+  HUB_CREATED
+  HUB_UPDATED
+  HUB_DELETED
 }
 
 // ── Models ────────────────────────────────────────────────────
 
 model User {
-  id            String       @id @default(uuid()) @db.Uuid
-  email         String       @unique
-  password      String? // null for Google-only accounts
-  name          String
-  phone         String?
-  avatarUrl     String?
-  role          Role         @default(CUSTOMER)
-  status        UserStatus   @default(ACTIVE)
-  provider      AuthProvider @default(EMAIL)
-  googleId      String?      @unique
-  isEmailVerified Boolean     @default(false)
+  id              String        @id @default(uuid()) @db.Uuid
+  email           String        @unique
+  password        String? // null for Google-only accounts
+  name            String
+  phone           String?
+  avatarUrl       String?
+  role            Role          @default(CUSTOMER)
+  status          UserStatus    @default(ACTIVE)
+  provider        AuthProvider  @default(LOCAL)
+  googleId        String?       @unique
+  isEmailVerified Boolean       @default(false)
+  rating          Float         @default(0)
+  totalDeliveries Int           @default(0)
+  isAvailable     Boolean       @default(false)
 
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  deletedAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  isDeleted       Boolean       @default(false)
 
-  // Relations
-  courierProfile          CourierProfile?
-  customerShipments       Shipment[]         @relation("CustomerShipments")
-  courierAssignments      ShipmentAssignment[] @relation("CourierAssignments")
-  assignmentsMade         ShipmentAssignment[] @relation("AssignmentAdmin")
-  pickupRequests          PickupRequest[]
-  payments                Payment[]
-  auditLogs               AuditLog[]         @relation("AuditActor")
+  parcelsAsSender      Parcel[]                    @relation("SenderParcels")
+  parcelsAsCourier     Parcel[]                    @relation("CourierParcels")
+  statusChanges        ParcelStatusHistory[]       @relation("StatusChangesByUser")
+  payments             Payment[]
+  auditLogs            AuditLog[]                  @relation("ActorLogs")
 
-  @@index([role])
+  @@index([role, status])
   @@index([createdAt])
-  @@index([deletedAt])
-}
-
-model CourierProfile {
-  id            String     @id @default(uuid()) @db.Uuid
-  userId        String     @unique @db.Uuid
-  vehicleType   String?
-  vehicleNumber String?
-  licenseNumber String?    @unique
-  isAvailable   Boolean    @default(false)
-  rating        Float      @default(0)
-  totalDeliveries Int      @default(0)
-  currentHubId  String?    @db.Uuid
-
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-  deletedAt     DateTime?
-
-  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  currentHub    Hub?       @relation(fields: [currentHubId], references: [id])
-
-  @@index([isAvailable])
-  @@index([currentHubId])
+  @@index([isDeleted])
 }
 
 model Hub {
-  id         String    @id @default(uuid()) @db.Uuid
-  name       String
-  code       String    @unique
-  address    String
-  city       String
-  latitude   Float?
-  longitude  Float?
+  id        String  @id @default(uuid()) @db.Uuid
+  name      String
+  code      String  @unique
+  zoneCode  String  @unique // drives zone-based pricing
+  zoneName  String
+  address   String
+  city      String?
+  lat       Float?
+  lng       Float?
 
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  deletedAt  DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  isDeleted Boolean  @default(false)
 
-  couriers         CourierProfile[]
-  shipmentsByOrigin   Shipment[] @relation("OriginHub")
-  shipmentsByDestination Shipment[] @relation("DestinationHub")
-  trackingDestinations   ShipmentTracking[] @relation("DestHub")
-  trackingSources        ShipmentTracking[] @relation("SourceHub")
+  originParcels      Parcel[] @relation("OriginHubParcels")
+  destinationParcels Parcel[] @relation("DestinationHubParcels")
 
+  @@index([isDeleted, zoneCode])
   @@index([city])
 }
 
-model Shipment {
-  id            String         @id @default(uuid()) @db.Uuid
-  trackingNumber String        @unique
-  type          ShipmentType   @default(PARCEL)
-  status        ShipmentStatus @default(CREATED)
+model Parcel {
+  id             String       @id @default(uuid()) @db.Uuid
+  trackingNumber String       @unique
+  status         ParcelStatus @default(PENDING)
+  type           ParcelType   @default(PARCEL)
+  weightKg       Float        @default(0)
+  dimensions     String?
+  fee            Decimal      @db.Decimal(10, 2)
+  currency       String       @default("BDT")
 
-  // Sender (customer)
-  customerId    String         @db.Uuid
+  senderId         String  @db.Uuid
+  courierId        String? @db.Uuid
+  originHubId      String? @db.Uuid
+  destinationHubId String? @db.Uuid
+
   senderName    String
   senderPhone   String
   senderAddress String
-  senderCity    String
-
-  // Receiver
-  receiverName    String
-  receiverPhone   String
+  senderCity    String?
+  receiverName  String
+  receiverPhone String
   receiverAddress String
-  receiverCity    String
+  receiverCity    String?
 
-  weightKg      Float          @default(0)
-  dimensions    String?
-  estimatedCost Decimal        @default(0) @db.Decimal(10, 2)
-  amountPaid    Decimal        @default(0) @db.Decimal(10, 2)
-  notes         String?
-  imageUrl      String?
+  notes        String?
+  deliveredAt  DateTime?
+  cancelledAt  DateTime?
 
-  originHubId       String?     @db.Uuid
-  destinationHubId  String?     @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  isDeleted Boolean  @default(false)
 
-  deliveredAt   DateTime?
-  cancelledAt   DateTime?
+  sender          User                @relation("SenderParcels", fields: [senderId], references: [id])
+  courier         User?               @relation("CourierParcels", fields: [courierId], references: [id])
+  originHub       Hub?                @relation("OriginHubParcels", fields: [originHubId], references: [id])
+  destinationHub  Hub?                @relation("DestinationHubParcels", fields: [destinationHubId], references: [id])
+  payment         Payment?
+  statusHistory   ParcelStatusHistory[]
 
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  deletedAt     DateTime?
-
-  customer       User              @relation("CustomerShipments", fields: [customerId], references: [id])
-  originHub      Hub?              @relation("OriginHub", fields: [originHubId], references: [id])
-  destinationHub Hub?              @relation("DestinationHub", fields: [destinationHubId], references: [id])
-  pickupRequests PickupRequest[]
-  assignments    ShipmentAssignment[]
-  tracking       ShipmentTracking[]
-  payment        Payment?
-
-  @@index([status])
-  @@index([customerId])
+  @@index([senderId, courierId, status])
+  @@index([trackingNumber])
+  @@index([status, isDeleted])
+  @@index([originHubId, destinationHubId])
   @@index([createdAt])
-  @@index([originHubId])
-  @@index([destinationHubId])
-  @@index([deletedAt])
+  @@index([isDeleted])
 }
 
-model PickupRequest {
-  id            String              @id @default(uuid()) @db.Uuid
-  shipmentId    String              @db.Uuid
-  requesterId   String              @db.Uuid
-  status        PickupRequestStatus @default(PENDING)
-  preferredDate DateTime?
-  address       String?
-  notes         String?
-  assignedCourierId String?          @db.Uuid
+model ParcelStatusHistory {
+  id         String       @id @default(uuid()) @db.Uuid
+  parcelId   String       @db.Uuid
+  status     ParcelStatus
+  fromStatus ParcelStatus?
+  location   String?
+  note       String?
+  changedById String?     @db.Uuid
 
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  deletedAt     DateTime?
+  createdAt  DateTime     @default(now())
 
-  shipment      Shipment @relation(fields: [shipmentId], references: [id])
-  requester     User     @relation(fields: [requesterId], references: [id])
+  parcel    Parcel  @relation(fields: [parcelId], references: [id])
+  changedBy User?   @relation("StatusChangesByUser", fields: [changedById], references: [id])
 
+  @@index([parcelId, createdAt])
   @@index([status])
-  @@index([shipmentId])
-  @@index([createdAt])
-  @@index([requesterId])
-}
-
-model ShipmentAssignment {
-  id          String   @id @default(uuid()) @db.Uuid
-  shipmentId  String   @db.Uuid
-  courierId   String   @db.Uuid
-  assignedAt  DateTime @default(now())
-  assignedBy  String   @db.Uuid
-
-  shipment    Shipment @relation(fields: [shipmentId], references: [id])
-  courier     User     @relation("CourierAssignments", fields: [courierId], references: [id])
-  admin       User     @relation("AssignmentAdmin", fields: [assignedBy], references: [id])
-
-  @@index([courierId])
-  @@index([shipmentId])
-  @@index([assignedAt])
-}
-
-model ShipmentTracking {
-  id          String         @id @default(uuid()) @db.Uuid
-  shipmentId  String         @db.Uuid
-  status      ShipmentStatus
-  location    String?
-  description String?
-  sourceHubId String?        @db.Uuid
-  destHubId   String?        @db.Uuid
-  updatedById String?        @db.Uuid
-
-  createdAt   DateTime       @default(now())
-
-  shipment    Shipment       @relation(fields: [shipmentId], references: [id])
-  sourceHub   Hub?           @relation("SourceHub", fields: [sourceHubId], references: [id])
-  destHub     Hub?           @relation("DestHub", fields: [destHubId], references: [id])
-
-  @@index([shipmentId])
-  @@index([status])
-  @@index([createdAt])
-  @@index([sourceHubId])
-  @@index([destHubId])
 }
 
 model Payment {
-  id            String         @id @default(uuid()) @db.Uuid
-  shipmentId    String         @unique @db.Uuid
-  paidById      String         @db.Uuid
-  amount        Decimal        @db.Decimal(10, 2)
-  currency      String         @default("BDT")
-  method        PaymentMethod
-  status        PaymentStatus  @default(PENDING)
-  stripePaymentIntentId String? @unique
-  stripeChargeId       String?  @unique
-  paymentUrl    String? // session/checkout url for redirect-based flows
-  statusMessage String?
-  paidAt        DateTime?
+  id                    String        @id @default(uuid()) @db.Uuid
+  parcelId              String        @unique @db.Uuid
+  senderId              String        @db.Uuid
+  amount                Decimal       @db.Decimal(10, 2)
+  currency              String        @default("BDT")
+  method                PaymentMethod @default(STRIPE)
+  status                PaymentStatus @default(PENDING)
+  stripeSessionId       String?       @unique
+  stripePaymentIntentId String?       @unique
+  transactionId         String?       @unique
+  paidAt                DateTime?
 
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  deletedAt     DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  isDeleted Boolean  @default(false)
 
-  shipment      Shipment @relation(fields: [shipmentId], references: [id])
-  paidBy        User     @relation(fields: [paidById], references: [id])
+  parcel Parcel @relation(fields: [parcelId], references: [id])
+  sender User   @relation(fields: [senderId], references: [id])
 
   @@index([status])
-  @@index([paidById])
+  @@index([senderId, status])
   @@index([createdAt])
+  @@index([isDeleted])
 }
 
 model AuditLog {
-  id          String       @id @default(uuid()) @db.Uuid
-  action      AuditAction
-  actorId     String?      @db.Uuid
-  entityType  String // e.g. "Shipment", "User", "Payment"
-  entityId    String?
-  oldValue    Json?
-  newValue    Json?
-  ipAddress   String?
-  userAgent   String?
-  metadata    Json?
+  id         String      @id @default(uuid()) @db.Uuid
+  actorId    String?     @db.Uuid
+  action     AuditAction
+  entityType String?
+  entityId   String?
+  oldValue   Json?
+  newValue   Json?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
 
-  createdAt   DateTime     @default(now())
+  createdAt  DateTime    @default(now())
 
-  actor       User?        @relation("AuditActor", fields: [actorId], references: [id])
+  actor User? @relation("ActorLogs", fields: [actorId], references: [id])
 
   @@index([actorId])
-  @@index([entityType])
-  @@index([entityId])
-  @@index([createdAt])
   @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
 }
