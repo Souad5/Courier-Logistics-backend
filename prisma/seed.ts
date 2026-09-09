@@ -248,13 +248,16 @@ async function main(tx: Prisma.TransactionClient): Promise<void> {
 }
 
 async function run(): Promise<void> {
-  await prisma.$transaction(async (tx) => {
-    await tx.auditLog.deleteMany();
-    await tx.payment.deleteMany();
-    await tx.parcelStatusHistory.deleteMany();
-    await tx.parcel.deleteMany();
-    await main(tx);
-  });
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.auditLog.deleteMany();
+      await tx.payment.deleteMany();
+      await tx.parcelStatusHistory.deleteMany();
+      await tx.parcel.deleteMany();
+      await main(tx);
+    },
+    { maxWait: 30000, timeout: 120000 },
+  );
 }
 
 run()

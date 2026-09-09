@@ -6,8 +6,11 @@ async function bootstrap(): Promise<void> {
     await prisma.$connect();
     console.log("✅ Database connected");
 
-    const server = app.listen(env.PORT, () => {
-      console.log(`🚀 Courier & Logistics API running on http://localhost:${env.PORT}`);
+    const HOST = "0.0.0.0";
+    const server = app.listen(env.PORT, HOST, () => {
+      console.log(
+        `🚀 Courier & Logistics API running on http://localhost:${env.PORT} || http://192.168.0.80:${env.PORT}`,
+      );
     });
 
     const shutdown = async (signal: string): Promise<void> => {
