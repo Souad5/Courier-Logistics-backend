@@ -62,60 +62,63 @@ export async function createParcel(
   const fee = calculateFee(input.weightKg, originHub.zoneCode, destinationHub.zoneCode);
   const trackingNumber = generateTrackingNumber();
 
-  return prisma.$transaction(async (tx) => {
-    const parcel = await tx.parcel.create({
-      data: {
-        trackingNumber,
-        type: input.type,
-        weightKg: input.weightKg,
-        dimensions: input.dimensions,
-        fee: fee.total,
-        currency: fee.currency,
-        senderId,
-        originHubId: input.originHubId,
-        destinationHubId: input.destinationHubId,
-        senderName: input.senderName.trim(),
-        senderPhone: input.senderPhone.trim(),
-        senderAddress: input.senderAddress.trim(),
-        senderCity: input.senderCity,
-        receiverName: input.receiverName.trim(),
-        receiverPhone: input.receiverPhone.trim(),
-        receiverAddress: input.receiverAddress.trim(),
-        receiverCity: input.receiverCity,
-        notes: input.notes,
-      },
-      include: PARCEL_INCLUDE,
-    });
-
-    await tx.parcelStatusHistory.create({
-      data: {
-        parcelId: parcel.id,
-        status: ParcelStatus.PENDING,
-        note: "Parcel created, awaiting payment.",
-      },
-    });
-
-    await logAudit({
-      action: "PARCEL_CREATED",
-      actorId: senderId,
-      entityType: "Parcel",
-      entityId: parcel.id,
-      newValue: { trackingNumber: parcel.trackingNumber, fee: fee.total, status: parcel.status },
-      metadata: {
-        feeBreakdown: {
-          total: fee.total,
-          baseFee: fee.baseFee,
-          weightFee: fee.weightFee,
-          zoneSurcharge: fee.zoneSurcharge,
+  return prisma.$transaction(
+    async (tx) => {
+      const parcel = await tx.parcel.create({
+        data: {
+          trackingNumber,
+          type: input.type,
+          weightKg: input.weightKg,
+          dimensions: input.dimensions,
+          fee: fee.total,
           currency: fee.currency,
+          senderId,
+          originHubId: input.originHubId,
+          destinationHubId: input.destinationHubId,
+          senderName: input.senderName.trim(),
+          senderPhone: input.senderPhone.trim(),
+          senderAddress: input.senderAddress.trim(),
+          senderCity: input.senderCity,
+          receiverName: input.receiverName.trim(),
+          receiverPhone: input.receiverPhone.trim(),
+          receiverAddress: input.receiverAddress.trim(),
+          receiverCity: input.receiverCity,
+          notes: input.notes,
         },
-      },
-      tx,
-      req,
-    });
+        include: PARCEL_INCLUDE,
+      });
 
-    return parcel;
-  });
+      await tx.parcelStatusHistory.create({
+        data: {
+          parcelId: parcel.id,
+          status: ParcelStatus.PENDING,
+          note: "Parcel created, awaiting payment.",
+        },
+      });
+
+      await logAudit({
+        action: "PARCEL_CREATED",
+        actorId: senderId,
+        entityType: "Parcel",
+        entityId: parcel.id,
+        newValue: { trackingNumber: parcel.trackingNumber, fee: fee.total, status: parcel.status },
+        metadata: {
+          feeBreakdown: {
+            total: fee.total,
+            baseFee: fee.baseFee,
+            weightFee: fee.weightFee,
+            zoneSurcharge: fee.zoneSurcharge,
+            currency: fee.currency,
+          },
+        },
+        tx,
+        req,
+      });
+
+      return parcel;
+    },
+    { maxWait: 10_000, timeout: 20_000 },
+  );
 }
 
 export async function listParcels(
@@ -238,40 +241,43 @@ export async function assignParcelToCourier(
     if (!destHub) throw new AppError(404, "Destination hub not found.");
   }
 
-  return prisma.$transaction(async (tx) => {
-    const updated = await tx.parcel.update({
-      where: { id: parcelId },
-      data: {
-        courierId: input.courierId,
-        ...(input.destinationHubId ? { destinationHubId: input.destinationHubId } : {}),
-        status: parcel.status === ParcelStatus.PENDING ? ParcelStatus.ACCEPTED : parcel.status,
-      },
-      include: PARCEL_INCLUDE,
-    });
-
-    if (parcel.status === ParcelStatus.PENDING) {
-      await tx.parcelStatusHistory.create({
+  return prisma.$transaction(
+    async (tx) => {
+      const updated = await tx.parcel.update({
+        where: { id: parcelId },
         data: {
-          parcelId,
-          status: ParcelStatus.ACCEPTED,
-          fromStatus: ParcelStatus.PENDING,
-          note: "Courier assigned and parcel accepted for shipping.",
+          courierId: input.courierId,
+          ...(input.destinationHubId ? { destinationHubId: input.destinationHubId } : {}),
+          status: parcel.status === ParcelStatus.PENDING ? ParcelStatus.ACCEPTED : parcel.status,
         },
+        include: PARCEL_INCLUDE,
       });
-    }
 
-    await logAudit({
-      action: "PARCEL_ASSIGNED",
-      actorId: adminId,
-      entityType: "Parcel",
-      entityId: parcelId,
-      oldValue: { courierId: parcel.courierId },
-      newValue: { courierId: input.courierId, destinationHubId: input.destinationHubId },
-      tx,
-    });
+      if (parcel.status === ParcelStatus.PENDING) {
+        await tx.parcelStatusHistory.create({
+          data: {
+            parcelId,
+            status: ParcelStatus.ACCEPTED,
+            fromStatus: ParcelStatus.PENDING,
+            note: "Courier assigned and parcel accepted for shipping.",
+          },
+        });
+      }
 
-    return updated;
-  });
+      await logAudit({
+        action: "PARCEL_ASSIGNED",
+        actorId: adminId,
+        entityType: "Parcel",
+        entityId: parcelId,
+        oldValue: { courierId: parcel.courierId },
+        newValue: { courierId: input.courierId, destinationHubId: input.destinationHubId },
+        tx,
+      });
+
+      return updated;
+    },
+    { maxWait: 10_000, timeout: 20_000 },
+  );
 }
 
 export async function updateParcelStatus(
@@ -297,39 +303,42 @@ export async function updateParcelStatus(
     throw new AppError(400, `Invalid transition from ${parcel.status} to ${nextStatus}.`);
   }
 
-  return prisma.$transaction(async (tx) => {
-    const updated = await tx.parcel.update({
-      where: { id: parcelId },
-      data: {
-        status: nextStatus,
-        ...(nextStatus === ParcelStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
-        ...(nextStatus === ParcelStatus.CANCELLED ? { cancelledAt: new Date() } : {}),
-      },
-    });
+  return prisma.$transaction(
+    async (tx) => {
+      const updated = await tx.parcel.update({
+        where: { id: parcelId },
+        data: {
+          status: nextStatus,
+          ...(nextStatus === ParcelStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
+          ...(nextStatus === ParcelStatus.CANCELLED ? { cancelledAt: new Date() } : {}),
+        },
+      });
 
-    await tx.parcelStatusHistory.create({
-      data: {
-        parcelId,
-        status: nextStatus,
-        fromStatus: parcel.status,
-        location: input.location,
-        note: input.note,
-        changedById: actor.id,
-      },
-    });
+      await tx.parcelStatusHistory.create({
+        data: {
+          parcelId,
+          status: nextStatus,
+          fromStatus: parcel.status,
+          location: input.location,
+          note: input.note,
+          changedById: actor.id,
+        },
+      });
 
-    await logAudit({
-      action: "PARCEL_STATUS_CHANGED",
-      actorId: actor.id,
-      entityType: "Parcel",
-      entityId: parcelId,
-      oldValue: { status: parcel.status },
-      newValue: { status: nextStatus, location: input.location, note: input.note },
-      tx,
-    });
+      await logAudit({
+        action: "PARCEL_STATUS_CHANGED",
+        actorId: actor.id,
+        entityType: "Parcel",
+        entityId: parcelId,
+        oldValue: { status: parcel.status },
+        newValue: { status: nextStatus, location: input.location, note: input.note },
+        tx,
+      });
 
-    return updated;
-  });
+      return updated;
+    },
+    { maxWait: 10_000, timeout: 20_000 },
+  );
 }
 
 export async function softDeleteParcel(
@@ -351,16 +360,19 @@ export async function softDeleteParcel(
     throw new AppError(409, "Only pending parcels can be deleted by the sender.");
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.parcel.update({ where: { id: parcelId }, data: { isDeleted: true } });
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.parcel.update({ where: { id: parcelId }, data: { isDeleted: true } });
 
-    await logAudit({
-      action: "PARCEL_DELETED",
-      actorId: actor.id,
-      entityType: "Parcel",
-      entityId: parcelId,
-      oldValue: { status: parcel.status },
-      tx,
-    });
-  });
+      await logAudit({
+        action: "PARCEL_DELETED",
+        actorId: actor.id,
+        entityType: "Parcel",
+        entityId: parcelId,
+        oldValue: { status: parcel.status },
+        tx,
+      });
+    },
+    { maxWait: 10_000, timeout: 20_000 },
+  );
 }

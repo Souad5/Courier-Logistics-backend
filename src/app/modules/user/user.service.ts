@@ -100,25 +100,28 @@ export async function updateUserRole(
 
   const previousRole = user.role;
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const result = await tx.user.update({
-      where: { id: userId },
-      data: { role },
-      select: USER_SELECT,
-    });
+  const updated = await prisma.$transaction(
+    async (tx) => {
+      const result = await tx.user.update({
+        where: { id: userId },
+        data: { role },
+        select: USER_SELECT,
+      });
 
-    await logAudit({
-      action: "ROLE_CHANGED",
-      actorId,
-      entityType: "User",
-      entityId: userId,
-      oldValue: { role: previousRole },
-      newValue: { role },
-      tx,
-    });
+      await logAudit({
+        action: "ROLE_CHANGED",
+        actorId,
+        entityType: "User",
+        entityId: userId,
+        oldValue: { role: previousRole },
+        newValue: { role },
+        tx,
+      });
 
-    return result;
-  });
+      return result;
+    },
+    { maxWait: 10_000, timeout: 20_000 },
+  );
 
   return toUserPayload(updated);
 }

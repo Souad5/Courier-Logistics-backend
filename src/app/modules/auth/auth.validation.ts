@@ -23,7 +23,13 @@ export const loginZodSchema = z.object({
 });
 
 export const googleLoginZodSchema = z.object({
-  idToken: z.string().min(10, "Google ID token is required"),
+  idToken: z
+    .string()
+    .min(10, "Google ID token is required")
+    .refine(
+      (token) => token.split(".").length === 3,
+      "Invalid Google ID token. Expected a JWT with 3 segments, but the client ID was likely sent instead of a real ID token.",
+    ),
 });
 
 export const refreshTokenZodSchema = z.object({

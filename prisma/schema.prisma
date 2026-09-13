@@ -117,7 +117,7 @@ model Hub {
   id        String  @id @default(uuid()) @db.Uuid
   name      String
   code      String  @unique
-  zoneCode  String  @unique // drives zone-based pricing
+  zoneCode  String   // drives zone-based pricing
   zoneName  String
   address   String
   city      String?

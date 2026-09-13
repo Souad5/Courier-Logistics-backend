@@ -146,50 +146,53 @@ async function handleSessionCompleted(session: Stripe.Checkout.Session): Promise
   if (!payment) throw new AppError(404, "Payment session not found in database.");
   if (payment.status === PaymentStatus.PAID) return; // idempotent — already processed
 
-  await prisma.$transaction(async (tx) => {
-    const updatedPayment = await tx.payment.update({
-      where: { id: payment.id },
-      data: {
-        status: PaymentStatus.PAID,
-        stripePaymentIntentId:
-          typeof session.payment_intent === "string" ? session.payment_intent : null,
-        transactionId:
-          typeof session.payment_intent === "string" ? session.payment_intent : session.id,
-        paidAt: new Date(),
-      },
-    });
-
-    let parcelUpdated = false;
-    if (payment.parcel.status === ParcelStatus.PENDING) {
-      await tx.parcel.update({
-        where: { id: payment.parcelId },
-        data: { status: ParcelStatus.ACCEPTED },
-      });
-      await tx.parcelStatusHistory.create({
+  await prisma.$transaction(
+    async (tx) => {
+      const updatedPayment = await tx.payment.update({
+        where: { id: payment.id },
         data: {
-          parcelId: payment.parcelId,
-          status: ParcelStatus.ACCEPTED,
-          fromStatus: ParcelStatus.PENDING,
-          note: "Payment confirmed — parcel accepted for shipping.",
+          status: PaymentStatus.PAID,
+          stripePaymentIntentId:
+            typeof session.payment_intent === "string" ? session.payment_intent : null,
+          transactionId:
+            typeof session.payment_intent === "string" ? session.payment_intent : session.id,
+          paidAt: new Date(),
         },
       });
-      parcelUpdated = true;
-    }
 
-    await logAudit({
-      action: "PAYMENT_VERIFIED",
-      actorId: payment.senderId,
-      entityType: "Payment",
-      entityId: payment.id,
-      newValue: {
-        status: PaymentStatus.PAID,
-        paidAt: updatedPayment.paidAt ? updatedPayment.paidAt.toISOString() : null,
-        parcelStatusChanged: parcelUpdated,
-      },
-      metadata: { stripeEventId: session.id },
-      tx,
-    });
-  });
+      let parcelUpdated = false;
+      if (payment.parcel.status === ParcelStatus.PENDING) {
+        await tx.parcel.update({
+          where: { id: payment.parcelId },
+          data: { status: ParcelStatus.ACCEPTED },
+        });
+        await tx.parcelStatusHistory.create({
+          data: {
+            parcelId: payment.parcelId,
+            status: ParcelStatus.ACCEPTED,
+            fromStatus: ParcelStatus.PENDING,
+            note: "Payment confirmed — parcel accepted for shipping.",
+          },
+        });
+        parcelUpdated = true;
+      }
+
+      await logAudit({
+        action: "PAYMENT_VERIFIED",
+        actorId: payment.senderId,
+        entityType: "Payment",
+        entityId: payment.id,
+        newValue: {
+          status: PaymentStatus.PAID,
+          paidAt: updatedPayment.paidAt ? updatedPayment.paidAt.toISOString() : null,
+          parcelStatusChanged: parcelUpdated,
+        },
+        metadata: { stripeEventId: session.id },
+        tx,
+      });
+    },
+    { maxWait: 10_000, timeout: 20_000 },
+  );
 }
 
 async function handleSessionFailed(session: Stripe.Checkout.Session): Promise<void> {
@@ -199,21 +202,24 @@ async function handleSessionFailed(session: Stripe.Checkout.Session): Promise<vo
 
   if (!payment) return;
 
-  await prisma.$transaction(async (tx) => {
-    await tx.payment.update({
-      where: { id: payment.id },
-      data: { status: PaymentStatus.FAILED },
-    });
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: { status: PaymentStatus.FAILED },
+      });
 
-    await logAudit({
-      action: "PAYMENT_FAILED",
-      actorId: payment.senderId,
-      entityType: "Payment",
-      entityId: payment.id,
-      newValue: { status: PaymentStatus.FAILED, sessionId: session.id },
-      tx,
-    });
-  });
+      await logAudit({
+        action: "PAYMENT_FAILED",
+        actorId: payment.senderId,
+        entityType: "Payment",
+        entityId: payment.id,
+        newValue: { status: PaymentStatus.FAILED, sessionId: session.id },
+        tx,
+      });
+    },
+    { maxWait: 10_000, timeout: 20_000 },
+  );
 }
 
 export async function getPayment(paymentId: string, requester: { id: string; role: Role }) {

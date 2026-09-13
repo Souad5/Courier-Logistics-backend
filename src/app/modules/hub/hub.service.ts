@@ -108,34 +108,37 @@ export async function updateHub(
   const hub = await prisma.hub.findUnique({ where: { id: hubId, isDeleted: false } });
   if (!hub) throw new AppError(404, "Hub not found.");
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const result = await tx.hub.update({
-      where: { id: hubId },
-      data: {
-        ...(input.name !== undefined ? { name: input.name.trim() } : {}),
-        ...(input.code !== undefined ? { code: input.code.trim().toUpperCase() } : {}),
-        ...(input.zoneCode !== undefined ? { zoneCode: input.zoneCode.trim() } : {}),
-        ...(input.zoneName !== undefined ? { zoneName: input.zoneName.trim() } : {}),
-        ...(input.address !== undefined ? { address: input.address.trim() } : {}),
-        ...(input.city !== undefined ? { city: input.city } : {}),
-        ...(input.lat !== undefined ? { lat: input.lat } : {}),
-        ...(input.lng !== undefined ? { lng: input.lng } : {}),
-      },
-      select: HUB_SELECT,
-    });
+  const updated = await prisma.$transaction(
+    async (tx) => {
+      const result = await tx.hub.update({
+        where: { id: hubId },
+        data: {
+          ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+          ...(input.code !== undefined ? { code: input.code.trim().toUpperCase() } : {}),
+          ...(input.zoneCode !== undefined ? { zoneCode: input.zoneCode.trim() } : {}),
+          ...(input.zoneName !== undefined ? { zoneName: input.zoneName.trim() } : {}),
+          ...(input.address !== undefined ? { address: input.address.trim() } : {}),
+          ...(input.city !== undefined ? { city: input.city } : {}),
+          ...(input.lat !== undefined ? { lat: input.lat } : {}),
+          ...(input.lng !== undefined ? { lng: input.lng } : {}),
+        },
+        select: HUB_SELECT,
+      });
 
-    await logAudit({
-      action: "HUB_UPDATED",
-      actorId,
-      entityType: "Hub",
-      entityId: hubId,
-      oldValue: { name: hub.name, zoneCode: hub.zoneCode },
-      newValue: { name: result.name, zoneCode: result.zoneCode },
-      tx,
-    });
+      await logAudit({
+        action: "HUB_UPDATED",
+        actorId,
+        entityType: "Hub",
+        entityId: hubId,
+        oldValue: { name: hub.name, zoneCode: hub.zoneCode },
+        newValue: { name: result.name, zoneCode: result.zoneCode },
+        tx,
+      });
 
-    return result;
-  });
+      return result;
+    },
+    { maxWait: 10_000, timeout: 20_000 },
+  );
 
   return toHubPayload(updated);
 }
@@ -151,19 +154,22 @@ export async function softDeleteHub(hubId: string, actorId: string): Promise<voi
     throw new AppError(409, "Cannot delete this hub: it has active parcels routed to it.");
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.hub.update({
-      where: { id: hubId },
-      data: { isDeleted: true },
-    });
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.hub.update({
+        where: { id: hubId },
+        data: { isDeleted: true },
+      });
 
-    await logAudit({
-      action: "HUB_DELETED",
-      actorId,
-      entityType: "Hub",
-      entityId: hubId,
-      oldValue: { name: hub.name },
-      tx,
-    });
-  });
+      await logAudit({
+        action: "HUB_DELETED",
+        actorId,
+        entityType: "Hub",
+        entityId: hubId,
+        oldValue: { name: hub.name },
+        tx,
+      });
+    },
+    { maxWait: 10_000, timeout: 20_000 },
+  );
 }
