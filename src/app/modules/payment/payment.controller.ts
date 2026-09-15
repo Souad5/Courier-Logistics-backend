@@ -31,6 +31,14 @@ export const stripeWebhookHandler = catchAsync(async (req: Request, res: Respons
   sendSuccess(res, "Webhook processed successfully.", null, undefined, 200);
 });
 
+export const paymentSuccessHandler = (_req: Request, res: Response) => {
+  res.send("<h1>Payment Successful! You can close this tab.</h1>");
+};
+
+export const paymentCancelHandler = (_req: Request, res: Response) => {
+  res.send("<h1>Payment Canceled. You can close this tab.</h1>");
+};
+
 export const getPaymentHandler = catchAsync(async (req: Request, res: Response) => {
   const payment = await getPayment(String(req.params.id), {
     id: req.user!.id,

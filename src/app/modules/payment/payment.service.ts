@@ -1,7 +1,7 @@
 import { ParcelStatus, type Payment, PaymentStatus, Role } from "@prisma/client";
 import Stripe from "stripe";
 
-import { env, prisma } from "../../../config";
+import { env, prisma, stripe_cancel_url, stripe_success_url } from "../../../config";
 import { AppError } from "../../errors/AppError";
 import { logAudit } from "../../utils/audit";
 import type { IInitiatePaymentInput, IInitiatePaymentResult } from "./payment.interface";
@@ -42,6 +42,9 @@ export async function initiatePayment(
 
   const amountInCents = Math.round(Number(parcel.fee) * 100);
 
+  const finalSuccessUrl = input.successUrl || stripe_success_url;
+  const finalCancelUrl = input.cancelUrl || stripe_cancel_url;
+
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     payment_method_types: ["card"],
@@ -58,8 +61,8 @@ export async function initiatePayment(
         quantity: 1,
       },
     ],
-    success_url: input.successUrl,
-    cancel_url: input.cancelUrl,
+    success_url: finalSuccessUrl,
+    cancel_url: finalCancelUrl,
     client_reference_id: parcel.id,
     metadata: { parcelId: parcel.id, senderId, trackingNumber: parcel.trackingNumber },
   });

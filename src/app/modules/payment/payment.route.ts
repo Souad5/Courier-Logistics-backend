@@ -11,6 +11,10 @@ export const paymentRoutes = Router();
 // Stripe webhook — MUST stay before authenticate. Raw body parser is applied in app.ts.
 paymentRoutes.post("/webhook", paymentController.stripeWebhookHandler);
 
+// Stripe redirect fallbacks — public, no auth required.
+paymentRoutes.get("/success", paymentController.paymentSuccessHandler);
+paymentRoutes.get("/cancel", paymentController.paymentCancelHandler);
+
 paymentRoutes.use(authenticate);
 
 paymentRoutes.post(

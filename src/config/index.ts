@@ -21,6 +21,8 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_PUBLISHABLE_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_SUCCESS_URL: z.string().optional(),
+  STRIPE_CANCEL_URL: z.string().optional(),
 
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),
@@ -38,6 +40,12 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
+
+export const stripe_success_url =
+  env.STRIPE_SUCCESS_URL ||
+  "http://localhost:5000/api/v1/payments/success?session_id={CHECKOUT_SESSION_ID}";
+export const stripe_cancel_url =
+  env.STRIPE_CANCEL_URL || "http://localhost:5000/api/v1/payments/cancel";
 
 declare global {
   // eslint-disable-next-line no-var

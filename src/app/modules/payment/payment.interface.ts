@@ -2,8 +2,8 @@ import type { PaymentMethod, PaymentStatus } from "@prisma/client";
 
 export interface IInitiatePaymentInput {
   parcelId: string;
-  successUrl: string;
-  cancelUrl: string;
+  successUrl?: string;
+  cancelUrl?: string;
 }
 
 export interface IInitiatePaymentResult {

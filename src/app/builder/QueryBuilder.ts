@@ -6,6 +6,7 @@ export interface IQueryOptions {
   search?: string;
   searchableFields?: string[];
   sortableFields?: string[];
+  softDelete?: boolean;
 }
 
 export interface IPaginationMeta {
@@ -31,6 +32,7 @@ export class QueryBuilder {
   private readonly defaultSortBy: string;
   private searchableFields: string[] = [];
   private sortableFields: string[] = [];
+  private readonly softDelete: boolean;
   private readonly filters: Record<string, unknown> = {};
 
   constructor(query: Record<string, unknown> = {}, options: Partial<IQueryOptions> = {}) {
@@ -58,6 +60,7 @@ export class QueryBuilder {
 
     if (options.searchableFields) this.searchableFields = options.searchableFields;
     if (options.sortableFields) this.sortableFields = options.sortableFields;
+    this.softDelete = options.softDelete ?? true;
   }
 
   /** Register fields that can be searched with a partial, case-insensitive match. */
@@ -81,7 +84,11 @@ export class QueryBuilder {
   }
 
   where(extra: Record<string, unknown> = {}): Record<string, unknown> {
-    const where: Record<string, unknown> = { isDeleted: false, ...this.filters, ...extra };
+    const where: Record<string, unknown> = { ...this.filters, ...extra };
+
+    if (this.softDelete) {
+      where.isDeleted = false;
+    }
 
     if (this.search && this.searchableFields.length > 0) {
       where.OR = this.searchableFields.map((field) => ({
