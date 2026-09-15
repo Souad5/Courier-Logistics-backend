@@ -46,6 +46,7 @@ export async function listAuditLogs(
   const queryBuilder = new QueryBuilder(query, {
     sortBy: "createdAt",
     sortableFields: ["createdAt"],
+    softDelete: false,
   });
 
   const where = queryBuilder
