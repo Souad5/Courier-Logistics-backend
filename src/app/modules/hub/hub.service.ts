@@ -76,14 +76,22 @@ export async function createHub(input: ICreateHubInput, actorId: string): Promis
 export async function listHubs(
   query: Record<string, unknown>,
 ): Promise<{ hubs: IHubPayload[]; meta: IPaginationMeta }> {
-  const queryBuilder = new QueryBuilder(query, {
-    sortBy: "createdAt",
-    searchableFields: ["name", "zoneName"],
-    sortableFields: ["createdAt", "name", "city", "zoneName"],
-  });
+  // Accept `searchTerm` as the canonical free-text query param, falling back
+  // to `search` so the generic QueryBuilder convention keeps working.
+  const search = query.searchTerm ?? query.search;
+
+  const queryBuilder = new QueryBuilder(
+    { ...query, search },
+    {
+      sortBy: "createdAt",
+      searchableFields: ["name", "zoneName", "city"],
+      sortableFields: ["createdAt", "name", "city", "zoneName"],
+    },
+  );
 
   const where = queryBuilder
-    .filter("zoneCode", query.zone ? String(query.zone) : undefined)
+    .filter("zoneCode", query.zoneCode ? String(query.zoneCode) : undefined)
+    .filter("zoneName", query.zoneName ? String(query.zoneName) : undefined)
     .filter("city", query.city ? String(query.city) : undefined)
     .where();
 

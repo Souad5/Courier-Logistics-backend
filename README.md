@@ -470,7 +470,7 @@ GET /api/v1/users?page=1&limit=10&role=COURIER&search=rahim
 
 #### `GET /hubs` — List active hubs *(public)*
 
-Query params: `page`, `limit`, `search` (name/zone), `zone` (zoneCode), `city`.
+Query params: `page`, `limit`, `search` / `searchTerm` (matches name/zoneName/city), `zoneCode`, `zoneName`, `city`.
 
 #### `PATCH /hubs/:id` — Update hub details *(Admin)*
 
