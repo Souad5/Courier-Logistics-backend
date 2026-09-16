@@ -17,6 +17,7 @@ const envSchema = z.object({
 
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_CALLBACK_URL: z.string().optional(),
 
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_PUBLISHABLE_KEY: z.string().optional(),
@@ -29,6 +30,9 @@ const envSchema = z.object({
   CLOUDINARY_API_SECRET: z.string().optional(),
 
   REDIS_URL: z.string().optional(),
+  UPSTASH_REDIS_REST_URL: z.string().optional(),
+  UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+
   CLIENT_URL: z.string().default("http://localhost:3000"),
 });
 
