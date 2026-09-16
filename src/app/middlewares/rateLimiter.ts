@@ -10,7 +10,7 @@ export const apiRateLimiter = rateLimit({
   limit: 200,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  skip: (req) => req.path.startsWith("/api/v1/payments/webhook"),
+  skip: (req) => req.path.startsWith("/v1/payments/webhook"),
   message: { success: false, message: "Too many requests, please try again later.", errors: [] },
 });
 

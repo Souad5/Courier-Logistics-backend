@@ -13,6 +13,29 @@ function getStripe(): Stripe {
   return new Stripe(env.STRIPE_SECRET_KEY);
 }
 
+const allowedRedirectOrigins = env.CLIENT_URL.split(",")
+  .map((url) => {
+    try {
+      return new URL(url.trim()).origin;
+    } catch {
+      return null;
+    }
+  })
+  .filter((origin): origin is string => origin !== null);
+
+function assertAllowedRedirectUrl(url: string | undefined, label: string): void {
+  if (!url) return;
+  let origin: string;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    throw new AppError(400, `Invalid ${label}.`);
+  }
+  if (!allowedRedirectOrigins.includes(origin)) {
+    throw new AppError(400, `${label} must be hosted on an allowed client origin.`);
+  }
+}
+
 export async function initiatePayment(
   senderId: string,
   input: IInitiatePaymentInput,
@@ -39,6 +62,9 @@ export async function initiatePayment(
   if (existingPayment && existingPayment.status === PaymentStatus.PAID) {
     throw new AppError(409, "This parcel has already been paid for.");
   }
+
+  assertAllowedRedirectUrl(input.successUrl, "successUrl");
+  assertAllowedRedirectUrl(input.cancelUrl, "cancelUrl");
 
   const amountInCents = Math.round(Number(parcel.fee) * 100);
 
@@ -147,6 +173,12 @@ async function handleSessionCompleted(session: Stripe.Checkout.Session): Promise
   });
 
   if (!payment) throw new AppError(404, "Payment session not found in database.");
+
+  const metadataParcelId = session.metadata?.parcelId;
+  if (metadataParcelId && metadataParcelId !== payment.parcelId) {
+    throw new AppError(409, "Stripe session metadata does not match the recorded payment.");
+  }
+
   if (payment.status === PaymentStatus.PAID) return; // idempotent — already processed
 
   await prisma.$transaction(
