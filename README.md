@@ -709,7 +709,7 @@ Copy the `whsec_...` signing secret printed by the CLI into `STRIPE_WEBHOOK_SECR
 | Command                        | Description                                |
 | ------------------------------ | ------------------------------------------ |
 | `npm run dev`                  | Start dev server with hot reload (`tsx watch`) |
-| `npm run build`                | Compile TypeScript to `dist/`              |
+| `npm run build`                | Regenerate the Prisma client, then compile TypeScript to `dist/` (`prisma generate && tsc`) |
 | `npm start`                    | Run the compiled server                    |
 | `npm run prisma:generate`      | Generate the Prisma client                 |
 | `npm run prisma:migrate`       | Run an interactive dev migration           |
@@ -739,6 +739,7 @@ Notes:
 - The Stripe webhook raw-body parser is registered in `src/app.ts`, so signature verification works under serverless too.
 - Set all environment variables (`DATABASE_URL`, `JWT_SECRET`, `STRIPE_*`, `GOOGLE_CLIENT_ID`, …) in the Vercel dashboard.
 - Use a managed Postgres (e.g. Neon, Supabase) and a Redis provider (e.g. Upstash) that work well with serverless functions.
+- `postinstall` runs `prisma generate` automatically after `npm install`, and `npm run build` also runs it before `tsc` — this ensures the Prisma client is always regenerated against the current `schema.prisma` on a fresh Vercel build, even if the dependency cache is restored.
 
 ### Render
 
