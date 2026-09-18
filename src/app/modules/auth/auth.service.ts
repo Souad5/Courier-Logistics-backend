@@ -3,10 +3,13 @@ import bcrypt from "bcryptjs";
 import { OAuth2Client } from "google-auth-library";
 
 import { env, prisma } from "../../../config";
+import { cacheGet, cacheSet } from "../../../config/redis";
 import { AppError } from "../../errors/AppError";
 import { logAudit } from "../../utils/audit";
 import { signAccessToken, signTokens, verifyRefreshToken } from "../../utils/jwtHelpers";
 import type { IAuthResult, IAuthUser } from "./auth.interface";
+
+const revokedRefreshTokenKey = (jti: string): string => `auth:revoked-refresh:${jti}`;
 
 const SALT_ROUNDS = 12;
 
@@ -159,6 +162,10 @@ export async function refreshAccessToken(input: {
 }): Promise<{ accessToken: string }> {
   const payload = verifyRefreshToken(input.refreshToken);
 
+  if (await cacheGet(revokedRefreshTokenKey(payload.jti))) {
+    throw new AppError(401, "This refresh token has been revoked. Please log in again.");
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: payload.userId },
     select: { id: true, email: true, role: true, isDeleted: true, status: true },
@@ -169,4 +176,26 @@ export async function refreshAccessToken(input: {
   }
 
   return { accessToken: signAccessToken({ userId: user.id, email: user.email, role: user.role }) };
+}
+
+/**
+ * Revokes a single refresh token by denylisting its `jti` in Redis until the
+ * token's own expiry (after which it would be rejected anyway). Without
+ * REDIS_URL configured this degrades to a no-op — logout still "succeeds"
+ * but the token remains valid until it naturally expires.
+ */
+export async function logoutUser(input: { refreshToken: string }): Promise<void> {
+  const payload = verifyRefreshToken(input.refreshToken);
+
+  const ttlSeconds = payload.exp - Math.floor(Date.now() / 1000);
+  if (ttlSeconds > 0) {
+    await cacheSet(revokedRefreshTokenKey(payload.jti), "1", ttlSeconds);
+  }
+
+  await logAudit({
+    action: "LOGOUT",
+    actorId: payload.userId,
+    entityType: "User",
+    entityId: payload.userId,
+  });
 }

@@ -48,6 +48,8 @@ export interface IParcelTrackingPayload {
   receiverCity: string | null;
   createdAt: Date;
   deliveredAt: Date | null;
+  deliveryAttempts: number;
+  proofOfDeliveryUrl: string | null;
   history: IParcelStatusHistoryPayload[];
 }
 

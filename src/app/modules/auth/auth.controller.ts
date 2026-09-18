@@ -2,7 +2,13 @@ import type { Request, Response } from "express";
 
 import { catchAsync } from "../../utils/catchAsync";
 import { sendSuccess } from "../../utils/sendResponse";
-import { googleLoginUser, loginUser, refreshAccessToken, registerUser } from "./auth.service";
+import {
+  googleLoginUser,
+  loginUser,
+  logoutUser,
+  refreshAccessToken,
+  registerUser,
+} from "./auth.service";
 import type {
   GoogleLoginInput,
   LoginInput,
@@ -48,4 +54,11 @@ export const refreshToken = catchAsync(async (req: Request, res: Response) => {
   const result = await refreshAccessToken(body);
 
   sendSuccess(res, "Access token refreshed successfully.", result, undefined, 200);
+});
+
+export const logout = catchAsync(async (req: Request, res: Response) => {
+  const body = req.body as RefreshTokenInput;
+  await logoutUser(body);
+
+  sendSuccess(res, "Logged out successfully.", null, undefined, 200);
 });

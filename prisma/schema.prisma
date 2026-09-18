@@ -39,7 +39,10 @@ enum ParcelStatus {
   PICKED_UP // courier collected the parcel
   IN_TRANSIT // moving between hubs / to destination
   OUT_FOR_DELIVERY // courier heading to receiver
+  DELIVERY_FAILED // a delivery attempt was made and failed; may retry or go to return
   DELIVERED
+  RETURN_TO_SENDER // max delivery attempts exhausted or explicitly returned
+  RETURNED // return completed
   CANCELLED
 }
 
@@ -72,6 +75,7 @@ enum AuditAction {
   PARCEL_STATUS_CHANGED
   PARCEL_ASSIGNED
   PARCEL_DELETED
+  PARCEL_PROOF_OF_DELIVERY_UPLOADED
   PAYMENT_CREATED
   PAYMENT_VERIFIED
   PAYMENT_FAILED
@@ -160,8 +164,11 @@ model Parcel {
   receiverCity    String?
 
   notes        String?
+  deliveryAttempts Int      @default(0)
+  proofOfDeliveryUrl String?
   deliveredAt  DateTime?
   cancelledAt  DateTime?
+  returnedAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

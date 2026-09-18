@@ -31,3 +31,10 @@ export async function cacheDelete(...keys: string[]): Promise<void> {
   if (!client) return;
   if (keys.length > 0) await client.del(...keys);
 }
+
+/** Atomically increments a counter (creating it at 1 if absent). Returns 0 without Redis. */
+export async function cacheIncr(key: string): Promise<number> {
+  const client = getRedis();
+  if (!client) return 0;
+  return client.incr(key);
+}

@@ -2,6 +2,7 @@ import { Role } from "@prisma/client";
 import { Router } from "express";
 
 import { authenticate, authorizeRoles } from "../../middlewares/auth";
+import { paymentRateLimiter } from "../../middlewares/rateLimiter";
 import { validateRequest } from "../../middlewares/validateRequest";
 import * as paymentController from "./payment.controller";
 import { initiatePaymentZodSchema } from "./payment.validation";
@@ -19,6 +20,7 @@ paymentRoutes.use(authenticate);
 
 paymentRoutes.post(
   "/initiate",
+  paymentRateLimiter,
   authorizeRoles(Role.CUSTOMER),
   validateRequest(initiatePaymentZodSchema),
   paymentController.initiatePaymentHandler,

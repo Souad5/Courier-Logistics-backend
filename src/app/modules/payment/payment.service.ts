@@ -2,8 +2,10 @@ import { ParcelStatus, type Payment, PaymentStatus, Role } from "@prisma/client"
 import Stripe from "stripe";
 
 import { env, prisma, stripe_cancel_url, stripe_success_url } from "../../../config";
+import { cacheDelete } from "../../../config/redis";
 import { AppError } from "../../errors/AppError";
 import { logAudit } from "../../utils/audit";
+import { trackingCacheKey } from "../parcel/parcel.service";
 import type { IInitiatePaymentInput, IInitiatePaymentResult } from "./payment.interface";
 
 function getStripe(): Stripe {
@@ -228,6 +230,8 @@ async function handleSessionCompleted(session: Stripe.Checkout.Session): Promise
     },
     { maxWait: 10_000, timeout: 20_000 },
   );
+
+  await cacheDelete(trackingCacheKey(payment.parcel.trackingNumber));
 }
 
 async function handleSessionFailed(session: Stripe.Checkout.Session): Promise<void> {

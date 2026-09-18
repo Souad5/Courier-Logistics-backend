@@ -5,22 +5,33 @@ import { type IPaginationMeta, QueryBuilder } from "../../builder/QueryBuilder";
 import type { IAuditEntry, IDashboardStats } from "./auditLog.interface";
 
 export async function getDashboardStats(): Promise<IDashboardStats> {
-  const [incomeAgg, totalCustomers, totalCouriers, activeCouriers, totalParcels, statusBreakdown] =
-    await Promise.all([
-      prisma.payment.aggregate({
-        where: { status: PaymentStatus.PAID, isDeleted: false },
-        _sum: { amount: true },
-      }),
-      prisma.user.count({ where: { role: Role.CUSTOMER, isDeleted: false } }),
-      prisma.user.count({ where: { role: Role.COURIER, isDeleted: false } }),
-      prisma.user.count({ where: { role: Role.COURIER, status: "ACTIVE", isDeleted: false } }),
-      prisma.parcel.count({ where: { isDeleted: false } }),
-      prisma.parcel.groupBy({
-        by: ["status"],
-        where: { isDeleted: false },
-        _count: { _all: true },
-      }),
-    ]);
+  const [
+    incomeAgg,
+    totalCustomers,
+    totalCouriers,
+    activeCouriers,
+    totalParcels,
+    statusBreakdown,
+    deliveryAttemptsAgg,
+  ] = await Promise.all([
+    prisma.payment.aggregate({
+      where: { status: PaymentStatus.PAID, isDeleted: false },
+      _sum: { amount: true },
+    }),
+    prisma.user.count({ where: { role: Role.CUSTOMER, isDeleted: false } }),
+    prisma.user.count({ where: { role: Role.COURIER, isDeleted: false } }),
+    prisma.user.count({ where: { role: Role.COURIER, status: "ACTIVE", isDeleted: false } }),
+    prisma.parcel.count({ where: { isDeleted: false } }),
+    prisma.parcel.groupBy({
+      by: ["status"],
+      where: { isDeleted: false },
+      _count: { _all: true },
+    }),
+    prisma.parcel.aggregate({
+      where: { isDeleted: false },
+      _sum: { deliveryAttempts: true },
+    }),
+  ]);
 
   const breakdown = statusBreakdown.map((row) => ({
     status: row.status,
@@ -36,6 +47,8 @@ export async function getDashboardStats(): Promise<IDashboardStats> {
     deliveredParcels: breakdown.find((b) => b.status === "DELIVERED")?.count ?? 0,
     pendingParcels: breakdown.find((b) => b.status === "PENDING")?.count ?? 0,
     cancelledParcels: breakdown.find((b) => b.status === "CANCELLED")?.count ?? 0,
+    returnedParcels: breakdown.find((b) => b.status === "RETURNED")?.count ?? 0,
+    totalFailedDeliveryAttempts: deliveryAttemptsAgg._sum.deliveryAttempts ?? 0,
     statusBreakdown: breakdown,
   };
 }

@@ -15,6 +15,7 @@ export interface IUserPayload {
   role: Role;
   status: string;
   isEmailVerified: boolean;
+  isAvailable: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

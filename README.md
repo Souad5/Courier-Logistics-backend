@@ -61,7 +61,7 @@ Built with Node.js, TypeScript, Express, PostgreSQL, and Prisma — designed to 
 - **Centralized error handling** with tailored `AppError`, Zod, and Prisma error parsers.
 - **Zod validation** on every `POST` / `PATCH` / `PUT` request.
 - **Security hardening**: `helmet`, CORS, `express-rate-limit`, bcrypt password hashing.
-- **Optional Redis** integration for caching.
+- **Optional Redis caching** for the two hot public reads — parcel tracking (`GET /parcels/track/:trackingNumber`, 20s TTL, actively invalidated on every status/payment change) and the hub list (`GET /hubs`, version-counter invalidation on every hub write) — with automatic graceful no-op when `REDIS_URL` isn't set.
 - **Cloudinary** upload helper for parcel/images.
 
 ---
@@ -421,6 +421,14 @@ Verifies the token with the configured `GOOGLE_CLIENT_ID` and upserts the user. 
 
 Returns a fresh `{ accessToken }`.
 
+#### `POST /auth/logout` — Revoke a refresh token
+
+```json
+{ "refreshToken": "<refreshToken>" }
+```
+
+Denylists that refresh token's `jti` in Redis until its natural expiry, so it can no longer be used at `/auth/refresh-token` even though it hasn't expired yet. **Requires `REDIS_URL`** — without Redis configured this endpoint still returns success but has nothing to revoke against, so the token remains valid until it expires naturally.
+
 ---
 
 ### 2. Users (`/api/v1/users`)
@@ -432,6 +440,14 @@ Returns a fresh `{ accessToken }`.
 ```json
 { "name": "Alice R.", "phone": "+8801700000000", "avatarUrl": "https://…" }
 ```
+
+#### `PATCH /users/me/availability` — Toggle availability for new assignments *(Courier only)*
+
+```json
+{ "isAvailable": true }
+```
+
+Self-service flag a courier controls. `PATCH /parcels/:id/assign` rejects assigning a courier whose `isAvailable` is `false` or whose account `status` isn't `ACTIVE`.
 
 #### `GET /users` — List all users *(Admin)*
 
@@ -536,6 +552,10 @@ Query params: `page`, `limit`, `sortBy`, `sortOrder`, `search` (tracking/receive
 - `CUSTOMER` → parcels where `senderId = me`
 - `COURIER` → parcels where `courierId = me`
 
+#### `GET /parcels/:id` — Fetch a single parcel *(sender, assigned courier, or Admin)*
+
+`403` if the caller is neither the sender, the assigned courier, nor an Admin.
+
 #### `GET /parcels/track/:trackingNumber` — Public tracking view
 
 No authentication required. Returns the latest status plus the last 10 status-history entries.
@@ -550,7 +570,7 @@ GET /api/v1/parcels/track/BCM1A2B3C4D
 { "courierId": "<courier-uuid>", "destinationHubId": "<hub-uuid>" }
 ```
 
-Validates the user is actually a `COURIER`. If the parcel is still `PENDING`, it moves to `ACCEPTED`.
+Validates the user is actually a `COURIER`, that their account `status` is `ACTIVE`, and that `isAvailable` is `true` (couriers toggle this themselves via `PATCH /users/me/availability`) — otherwise `409`. If the parcel is still `PENDING`, it moves to `ACCEPTED`.
 
 #### `PATCH /parcels/:id/status` — Update lifecycle status *(Courier or Admin)*
 
@@ -558,16 +578,26 @@ Validates the user is actually a `COURIER`. If the parcel is still `PENDING`, it
 { "status": "PICKED_UP", "location": "Gulshan Hub", "note": "Parcel collected" }
 ```
 
-Allowed transitions:
+Allowed transitions (centralized in `parcel.service.ts`, exported as `ALLOWED_TRANSITIONS`/`assertValidTransition` for reuse and unit testing):
 
 ```text
-ACCEPTED       → PICKED_UP | CANCELLED
-PICKED_UP      → IN_TRANSIT | CANCELLED
-IN_TRANSIT     → OUT_FOR_DELIVERY | CANCELLED
-OUT_FOR_DELIVERY → DELIVERED
+PENDING          → CANCELLED                          (PENDING → ACCEPTED only via assign/payment webhook, never this endpoint)
+ACCEPTED         → PICKED_UP | CANCELLED
+PICKED_UP        → IN_TRANSIT | CANCELLED
+IN_TRANSIT       → OUT_FOR_DELIVERY | CANCELLED
+OUT_FOR_DELIVERY → DELIVERED | DELIVERY_FAILED
+DELIVERY_FAILED  → OUT_FOR_DELIVERY (retry) | RETURN_TO_SENDER
+RETURN_TO_SENDER → RETURNED
+DELIVERED / CANCELLED / RETURNED → (terminal — no further transitions)
 ```
 
-A `COURIER` may only update parcels assigned to them. Delivering sets `deliveredAt`; cancelling sets `cancelledAt`.
+- `DELIVERY_FAILED` requires a `note` (the failure reason) and increments the parcel's `deliveryAttempts` counter.
+- After `MAX_DELIVERY_ATTEMPTS` (3) failed attempts, retrying `OUT_FOR_DELIVERY` is rejected (`409`) — the parcel must go to `RETURN_TO_SENDER` instead.
+- A `COURIER` may only update parcels assigned to them. Delivering sets `deliveredAt`; cancelling sets `cancelledAt`; returning sets `returnedAt`.
+
+#### `POST /parcels/:id/proof-of-delivery` — Upload a delivery photo *(Courier or Admin)*
+
+`multipart/form-data` with a single file field named `photo` (JPEG/PNG/WebP, ≤ 5MB — both are enforced before anything is uploaded). Only allowed while the parcel is `OUT_FOR_DELIVERY` or `DELIVERED`. The image is streamed straight to Cloudinary (never written to disk) and the resulting URL is stored on the parcel (`proofOfDeliveryUrl`, also returned by the public tracking endpoint).
 
 #### `DELETE /parcels/:id` — Soft-delete a parcel
 
@@ -624,6 +654,8 @@ Returns total income, customer/courier counts, delivered/pending/cancelled count
       "deliveredParcels": 1,
       "pendingParcels": 1,
       "cancelledParcels": 1,
+      "returnedParcels": 0,
+      "totalFailedDeliveryAttempts": 2,
       "statusBreakdown": [ { "status": "DELIVERED", "count": 1 } ]
     }
   }
@@ -682,6 +714,10 @@ curl -s http://localhost:5000/api/v1/parcels/track/BCM1A2B3C4D | jq '.data.statu
 
 The API ships with **no frontend**; Postman or Thunder Client is the intended client.
 
+Import [`postman/courier-logistics.postman_collection.json`](./postman/courier-logistics.postman_collection.json) — it covers every endpoint below, grouped by module, with collection-level bearer auth wired to a `{{accessToken}}` variable. The **Register**/**Login**/**Refresh Token** requests carry test scripts that auto-populate `{{accessToken}}`/`{{refreshToken}}`, and **Create Hub**/**Create Parcel** auto-populate `{{hubId}}`/`{{parcelId}}`/`{{trackingNumber}}`, so the whole collection can be run top-to-bottom.
+
+Manual setup instead:
+
 1. Create a collection with base URL `http://localhost:5000/api/v1`.
 2. Add an environment variable `baseUrl` and a `token` variable.
 3. Call **Login** first, then in the collection *Tests* tab:
@@ -704,6 +740,17 @@ Copy the `whsec_...` signing secret printed by the CLI into `STRIPE_WEBHOOK_SECR
 
 ---
 
+## Testing
+
+`npm test` runs the [vitest](https://vitest.dev) suite in `tests/`:
+
+- **`tests/unit/`** — pure logic, no DB: fee calculation (server always computes price, ignores any client-supplied value), tracking-number generation, and the parcel state machine (`assertValidTransition`) including the delivery-attempt cap.
+- **`tests/integration/`** — supertest against the real Express `app` and a live Postgres connection (`DATABASE_URL`): register/login/RBAC, IDOR protection (one customer can't read/pay/delete another's parcel), the full pickup → delivery-failed → retry → delivered lifecycle, the return-to-sender path once `MAX_DELIVERY_ATTEMPTS` is exhausted, courier-assignment business rules (inactive/unavailable courier rejected), and Stripe webhook signature rejection (a forged or missing signature is always `400`, confirming payment status can never be set by an untrusted client request).
+
+Integration tests create their own uniquely-tagged fixtures (`tests/helpers/fixtures.ts`) and delete them in `afterAll`, so the suite is safe to run repeatedly against a shared dev database without leaving residue. Requires a reachable `DATABASE_URL`.
+
+---
+
 ## Scripts
 
 | Command                        | Description                                |
@@ -719,6 +766,8 @@ Copy the `whsec_...` signing secret printed by the CLI into `STRIPE_WEBHOOK_SECR
 | `npm run lint`                 | Biome lint check                           |
 | `npm run lint:fix`             | Auto-fix lint issues                       |
 | `npm run format`               | Format code with Biome                     |
+| `npm test`                     | Run the vitest suite once (`vitest run`)   |
+| `npm run test:watch`           | Run the vitest suite in watch mode         |
 
 ---
 

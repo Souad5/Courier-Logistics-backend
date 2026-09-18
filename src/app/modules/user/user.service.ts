@@ -17,6 +17,7 @@ const USER_SELECT = {
   status: true,
   provider: true,
   isEmailVerified: true,
+  isAvailable: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.UserSelect;
@@ -33,6 +34,7 @@ function toUserPayload(user: UserSelectPayload): IUserPayload {
     role: user.role,
     status: user.status,
     isEmailVerified: user.isEmailVerified,
+    isAvailable: user.isAvailable,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -124,6 +126,24 @@ export async function updateUserRole(
   );
 
   return toUserPayload(updated);
+}
+
+/**
+ * Self-service toggle for a courier's own availability. Assignment checks this
+ * flag (see `assignParcelToCourier` in the parcel service) so couriers control
+ * whether they receive new work.
+ */
+export async function updateCourierAvailability(
+  userId: string,
+  isAvailable: boolean,
+): Promise<IUserPayload> {
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: { isAvailable },
+    select: USER_SELECT,
+  });
+
+  return toUserPayload(user);
 }
 
 export { Role };

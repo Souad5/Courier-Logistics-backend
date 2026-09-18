@@ -9,6 +9,8 @@ export interface IDashboardStats {
   deliveredParcels: number;
   pendingParcels: number;
   cancelledParcels: number;
+  returnedParcels: number;
+  totalFailedDeliveryAttempts: number;
   statusBreakdown: Array<{ status: ParcelStatus; count: number }>;
 }
 

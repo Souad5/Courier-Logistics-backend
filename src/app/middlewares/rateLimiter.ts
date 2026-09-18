@@ -21,3 +21,16 @@ export const authRateLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, message: "Too many auth attempts, please slow down.", errors: [] },
 });
+
+/** Protects Stripe checkout-session creation from being hammered (each call is a Stripe API request). */
+export const paymentRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many payment attempts, please slow down.",
+    errors: [],
+  },
+});

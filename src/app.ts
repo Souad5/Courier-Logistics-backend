@@ -13,10 +13,11 @@ const app: Express = express();
 // Security headers
 app.use(helmet());
 
-// CORS
+// CORS — CLIENT_URL always resolves (env schema defaults it), so origin is
+// deliberately never "*": allowed origins must be explicitly configured.
 app.use(
   cors({
-    origin: env.CLIENT_URL ? env.CLIENT_URL.split(",") : "*",
+    origin: env.CLIENT_URL.split(",").map((origin) => origin.trim()),
     credentials: true,
   }),
 );
