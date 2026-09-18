@@ -11,5 +11,10 @@ export const updateRoleZodSchema = z.object({
   role: z.nativeEnum(Role),
 });
 
+export const updateAvailabilityZodSchema = z.object({
+  isAvailable: z.boolean(),
+});
+
 export type UpdateProfileInput = z.infer<typeof updateProfileZodSchema>;
 export type UpdateRoleInput = z.infer<typeof updateRoleZodSchema>;
+export type UpdateAvailabilityInput = z.infer<typeof updateAvailabilityZodSchema>;

@@ -4,7 +4,11 @@ import { Router } from "express";
 import { authenticate, authorizeRoles } from "../../middlewares/auth";
 import { validateRequest } from "../../middlewares/validateRequest";
 import * as userController from "./user.controller";
-import { updateProfileZodSchema, updateRoleZodSchema } from "./user.validation";
+import {
+  updateAvailabilityZodSchema,
+  updateProfileZodSchema,
+  updateRoleZodSchema,
+} from "./user.validation";
 
 export const userRoutes = Router();
 
@@ -14,6 +18,13 @@ userRoutes.patch(
   authenticate,
   validateRequest(updateProfileZodSchema),
   userController.updateMe,
+);
+userRoutes.patch(
+  "/me/availability",
+  authenticate,
+  authorizeRoles(Role.COURIER),
+  validateRequest(updateAvailabilityZodSchema),
+  userController.updateAvailability,
 );
 
 userRoutes.get("/", authenticate, authorizeRoles(Role.ADMIN), userController.getUsers);

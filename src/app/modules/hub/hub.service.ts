@@ -1,10 +1,27 @@
 import { type Hub, Prisma } from "@prisma/client";
 
 import { prisma } from "../../../config";
+import { cacheGet, cacheIncr, cacheSet } from "../../../config/redis";
 import { type IPaginationMeta, QueryBuilder } from "../../builder/QueryBuilder";
 import { AppError } from "../../errors/AppError";
 import { logAudit } from "../../utils/audit";
 import type { ICreateHubInput, IHubPayload, IUpdateHubInput } from "./hub.interface";
+
+// Hubs are admin-managed and change rarely but `GET /hubs` is public and
+// customer-facing (looked up before every parcel creation). Cache list pages
+// behind a version counter: any hub write bumps the version, which changes
+// every cache key at once — no stale reads, no need to enumerate/scan keys.
+const HUB_LIST_CACHE_TTL_SECONDS = 120;
+const HUB_LIST_VERSION_KEY = "hubs:list:version";
+
+async function hubListCacheKey(query: Record<string, unknown>): Promise<string> {
+  const version = (await cacheGet(HUB_LIST_VERSION_KEY)) ?? "0";
+  return `hubs:list:v${version}:${JSON.stringify(query)}`;
+}
+
+async function invalidateHubListCache(): Promise<void> {
+  await cacheIncr(HUB_LIST_VERSION_KEY);
+}
 
 const HUB_SELECT = {
   id: true,
@@ -70,12 +87,18 @@ export async function createHub(input: ICreateHubInput, actorId: string): Promis
     newValue: { name: hub.name, code: hub.code, zoneCode: hub.zoneCode },
   });
 
+  await invalidateHubListCache();
+
   return toHubPayload(hub);
 }
 
 export async function listHubs(
   query: Record<string, unknown>,
 ): Promise<{ hubs: IHubPayload[]; meta: IPaginationMeta }> {
+  const cacheKey = await hubListCacheKey(query);
+  const cached = await cacheGet(cacheKey);
+  if (cached) return JSON.parse(cached) as { hubs: IHubPayload[]; meta: IPaginationMeta };
+
   // Accept `searchTerm` as the canonical free-text query param, falling back
   // to `search` so the generic QueryBuilder convention keeps working.
   const search = query.searchTerm ?? query.search;
@@ -105,7 +128,10 @@ export async function listHubs(
     prisma.hub.count({ where }),
   ]);
 
-  return { hubs: hubs.map(toHubPayload), meta: queryBuilder.buildMeta(total) };
+  const result = { hubs: hubs.map(toHubPayload), meta: queryBuilder.buildMeta(total) };
+  await cacheSet(cacheKey, JSON.stringify(result), HUB_LIST_CACHE_TTL_SECONDS);
+
+  return result;
 }
 
 export async function updateHub(
@@ -148,6 +174,8 @@ export async function updateHub(
     { maxWait: 10_000, timeout: 20_000 },
   );
 
+  await invalidateHubListCache();
+
   return toHubPayload(updated);
 }
 
@@ -180,4 +208,6 @@ export async function softDeleteHub(hubId: string, actorId: string): Promise<voi
     },
     { maxWait: 10_000, timeout: 20_000 },
   );
+
+  await invalidateHubListCache();
 }

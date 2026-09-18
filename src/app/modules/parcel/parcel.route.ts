@@ -2,6 +2,7 @@ import { Role } from "@prisma/client";
 import { Router } from "express";
 
 import { authenticate, authorizeRoles } from "../../middlewares/auth";
+import { uploadProofOfDeliveryPhoto } from "../../middlewares/upload";
 import { validateRequest } from "../../middlewares/validateRequest";
 import * as parcelController from "./parcel.controller";
 import {
@@ -29,6 +30,10 @@ parcelRoutes.get(
   authorizeRoles(Role.CUSTOMER, Role.COURIER),
   parcelController.getMyParcels,
 );
+// Ownership (sender/assigned courier) or Admin — enforced in the service, same
+// pattern as DELETE /:id below, since all three roles can legitimately reach
+// their own subset of parcels here.
+parcelRoutes.get("/:id", parcelController.getParcelHandler);
 
 parcelRoutes.patch(
   "/:id/assign",
@@ -41,5 +46,11 @@ parcelRoutes.patch(
   authorizeRoles(Role.COURIER, Role.ADMIN),
   validateRequest(updateParcelStatusZodSchema),
   parcelController.updateStatusHandler,
+);
+parcelRoutes.post(
+  "/:id/proof-of-delivery",
+  authorizeRoles(Role.COURIER, Role.ADMIN),
+  uploadProofOfDeliveryPhoto,
+  parcelController.uploadProofOfDeliveryHandler,
 );
 parcelRoutes.delete("/:id", parcelController.deleteParcelHandler);

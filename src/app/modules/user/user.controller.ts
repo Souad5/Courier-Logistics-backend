@@ -3,8 +3,18 @@ import type { Request, Response } from "express";
 
 import { catchAsync } from "../../utils/catchAsync";
 import { sendSuccess } from "../../utils/sendResponse";
-import { getCurrentUser, listUsers, updateCurrentUser, updateUserRole } from "./user.service";
-import type { UpdateProfileInput, UpdateRoleInput } from "./user.validation";
+import {
+  getCurrentUser,
+  listUsers,
+  updateCourierAvailability,
+  updateCurrentUser,
+  updateUserRole,
+} from "./user.service";
+import type {
+  UpdateAvailabilityInput,
+  UpdateProfileInput,
+  UpdateRoleInput,
+} from "./user.validation";
 
 export const getMe = catchAsync(async (req: Request, res: Response) => {
   const user = await getCurrentUser(req.user!.id);
@@ -22,6 +32,19 @@ export const getUsers = catchAsync(async (req: Request, res: Response) => {
   const { users, meta } = await listUsers(query);
 
   sendSuccess(res, "Users fetched successfully.", { users }, meta, 200);
+});
+
+export const updateAvailability = catchAsync(async (req: Request, res: Response) => {
+  const body = req.body as UpdateAvailabilityInput;
+  const user = await updateCourierAvailability(req.user!.id, body.isAvailable);
+
+  sendSuccess(
+    res,
+    body.isAvailable ? "You are now available for new assignments." : "You are now unavailable.",
+    { user },
+    undefined,
+    200,
+  );
 });
 
 export const changeUserRole = catchAsync(async (req: Request, res: Response) => {

@@ -8,6 +8,8 @@ import {
 import type { Request } from "express";
 
 import { prisma } from "../../../config";
+import { uploadToCloudinary } from "../../../config/cloudinary";
+import { cacheDelete, cacheGet, cacheSet } from "../../../config/redis";
 import { type IPaginationMeta, QueryBuilder } from "../../builder/QueryBuilder";
 import { AppError } from "../../errors/AppError";
 import { logAudit } from "../../utils/audit";
@@ -30,17 +32,61 @@ const PARCEL_INCLUDE = {
 
 type ParcelWithRelations = Prisma.ParcelGetPayload<{ include: typeof PARCEL_INCLUDE }>;
 
-const TERMINAL_STATUSES: ParcelStatus[] = [ParcelStatus.DELIVERED, ParcelStatus.CANCELLED];
+export const TERMINAL_STATUSES: ParcelStatus[] = [
+  ParcelStatus.DELIVERED,
+  ParcelStatus.CANCELLED,
+  ParcelStatus.RETURNED,
+];
 
-const ALLOWED_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
-  [ParcelStatus.PENDING]: [ParcelStatus.CANCELLED, ParcelStatus.ACCEPTED],
+export const MAX_DELIVERY_ATTEMPTS = 3;
+
+/**
+ * Centralized parcel state machine. `PENDING -> ACCEPTED` is deliberately absent
+ * here: that transition only happens via courier assignment or the payment
+ * webhook (both apply it directly in their own transaction), never through the
+ * generic status-update endpoint, so payment/assignment can't be bypassed.
+ */
+export const ALLOWED_TRANSITIONS: Record<ParcelStatus, ParcelStatus[]> = {
+  [ParcelStatus.PENDING]: [ParcelStatus.CANCELLED],
   [ParcelStatus.ACCEPTED]: [ParcelStatus.PICKED_UP, ParcelStatus.CANCELLED],
   [ParcelStatus.PICKED_UP]: [ParcelStatus.IN_TRANSIT, ParcelStatus.CANCELLED],
   [ParcelStatus.IN_TRANSIT]: [ParcelStatus.OUT_FOR_DELIVERY, ParcelStatus.CANCELLED],
-  [ParcelStatus.OUT_FOR_DELIVERY]: [ParcelStatus.DELIVERED],
+  [ParcelStatus.OUT_FOR_DELIVERY]: [ParcelStatus.DELIVERED, ParcelStatus.DELIVERY_FAILED],
+  [ParcelStatus.DELIVERY_FAILED]: [ParcelStatus.OUT_FOR_DELIVERY, ParcelStatus.RETURN_TO_SENDER],
+  [ParcelStatus.RETURN_TO_SENDER]: [ParcelStatus.RETURNED],
   [ParcelStatus.DELIVERED]: [],
+  [ParcelStatus.RETURNED]: [],
   [ParcelStatus.CANCELLED]: [],
 };
+
+/**
+ * Pure transition check used by both the service and unit tests. Layers the
+ * delivery-attempt cap on top of the static adjacency table: once a parcel has
+ * failed delivery `MAX_DELIVERY_ATTEMPTS` times, it may no longer go back
+ * OUT_FOR_DELIVERY — it must be returned to the sender instead.
+ */
+export function assertValidTransition(
+  currentStatus: ParcelStatus,
+  nextStatus: ParcelStatus,
+  deliveryAttempts: number,
+): void {
+  if (nextStatus === currentStatus) {
+    throw new AppError(400, `Parcel is already in ${nextStatus} status.`);
+  }
+  if (!ALLOWED_TRANSITIONS[currentStatus].includes(nextStatus)) {
+    throw new AppError(400, `Invalid transition from ${currentStatus} to ${nextStatus}.`);
+  }
+  if (
+    currentStatus === ParcelStatus.DELIVERY_FAILED &&
+    nextStatus === ParcelStatus.OUT_FOR_DELIVERY &&
+    deliveryAttempts >= MAX_DELIVERY_ATTEMPTS
+  ) {
+    throw new AppError(
+      409,
+      `Maximum delivery attempts (${MAX_DELIVERY_ATTEMPTS}) reached. This parcel must be returned to the sender.`,
+    );
+  }
+}
 
 export async function createParcel(
   senderId: string,
@@ -182,7 +228,38 @@ export async function listMyParcels(
   return { parcels, meta: queryBuilder.buildMeta(total) };
 }
 
+export async function getParcelById(
+  parcelId: string,
+  actor: { id: string; role: Role },
+): Promise<ParcelWithRelations> {
+  const parcel = await prisma.parcel.findUnique({
+    where: { id: parcelId, isDeleted: false },
+    include: PARCEL_INCLUDE,
+  });
+
+  if (!parcel) throw new AppError(404, "Parcel not found.");
+
+  const isOwner = parcel.senderId === actor.id || parcel.courierId === actor.id;
+  if (actor.role !== Role.ADMIN && !isOwner) {
+    throw new AppError(403, "You do not have access to this parcel.");
+  }
+
+  return parcel;
+}
+
+// Public tracking is hit repeatedly by senders/receivers polling for updates.
+// A short TTL keeps it cheap on the DB without risking meaningfully stale reads,
+// and every write path that can change a parcel's status/visibility (status
+// updates, payment webhook, soft delete) actively evicts this key on commit.
+const TRACKING_CACHE_TTL_SECONDS = 20;
+export const trackingCacheKey = (trackingNumber: string): string =>
+  `parcel:track:${trackingNumber}`;
+
 export async function trackParcel(trackingNumber: string): Promise<IParcelTrackingPayload> {
+  const cacheKey = trackingCacheKey(trackingNumber);
+  const cached = await cacheGet(cacheKey);
+  if (cached) return JSON.parse(cached) as IParcelTrackingPayload;
+
   const parcel = await prisma.parcel.findUnique({
     where: { trackingNumber, isDeleted: false },
     include: {
@@ -203,7 +280,7 @@ export async function trackParcel(trackingNumber: string): Promise<IParcelTracki
     }),
   );
 
-  return {
+  const payload: IParcelTrackingPayload = {
     trackingNumber: parcel.trackingNumber,
     status: parcel.status,
     type: parcel.type,
@@ -214,8 +291,14 @@ export async function trackParcel(trackingNumber: string): Promise<IParcelTracki
     receiverCity: parcel.receiverCity,
     createdAt: parcel.createdAt,
     deliveredAt: parcel.deliveredAt,
+    deliveryAttempts: parcel.deliveryAttempts,
+    proofOfDeliveryUrl: parcel.proofOfDeliveryUrl,
     history,
   };
+
+  await cacheSet(cacheKey, JSON.stringify(payload), TRACKING_CACHE_TTL_SECONDS);
+
+  return payload;
 }
 
 export async function assignParcelToCourier(
@@ -231,6 +314,12 @@ export async function assignParcelToCourier(
   if (!parcel) throw new AppError(404, "Parcel not found.");
   if (!courier) throw new AppError(404, "Courier not found.");
   if (courier.role !== Role.COURIER) throw new AppError(400, "Assigned user is not a courier.");
+  if (courier.status !== "ACTIVE") {
+    throw new AppError(409, "This courier's account is not active.");
+  }
+  if (!courier.isAvailable) {
+    throw new AppError(409, "This courier is not currently available for new assignments.");
+  }
   if (TERMINAL_STATUSES.includes(parcel.status)) {
     throw new AppError(409, "Cannot assign a courier to a terminal parcel.");
   }
@@ -287,7 +376,14 @@ export async function updateParcelStatus(
 ): Promise<Parcel> {
   const parcel = await prisma.parcel.findUnique({
     where: { id: parcelId, isDeleted: false },
-    select: { id: true, status: true, courierId: true, deliveredAt: true },
+    select: {
+      id: true,
+      status: true,
+      courierId: true,
+      deliveredAt: true,
+      deliveryAttempts: true,
+      trackingNumber: true,
+    },
   });
 
   if (!parcel) throw new AppError(404, "Parcel not found.");
@@ -297,20 +393,24 @@ export async function updateParcelStatus(
   }
 
   const nextStatus = input.status;
-  if (nextStatus === parcel.status)
-    throw new AppError(400, `Parcel is already in ${nextStatus} status.`);
-  if (!ALLOWED_TRANSITIONS[parcel.status].includes(nextStatus)) {
-    throw new AppError(400, `Invalid transition from ${parcel.status} to ${nextStatus}.`);
+  assertValidTransition(parcel.status, nextStatus, parcel.deliveryAttempts);
+
+  if (nextStatus === ParcelStatus.DELIVERY_FAILED && !input.note) {
+    throw new AppError(400, "A reason is required when recording a failed delivery attempt.");
   }
 
-  return prisma.$transaction(
+  const updated = await prisma.$transaction(
     async (tx) => {
-      const updated = await tx.parcel.update({
+      const result = await tx.parcel.update({
         where: { id: parcelId },
         data: {
           status: nextStatus,
           ...(nextStatus === ParcelStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
           ...(nextStatus === ParcelStatus.CANCELLED ? { cancelledAt: new Date() } : {}),
+          ...(nextStatus === ParcelStatus.RETURNED ? { returnedAt: new Date() } : {}),
+          ...(nextStatus === ParcelStatus.DELIVERY_FAILED
+            ? { deliveryAttempts: { increment: 1 } }
+            : {}),
         },
       });
 
@@ -335,10 +435,14 @@ export async function updateParcelStatus(
         tx,
       });
 
-      return updated;
+      return result;
     },
     { maxWait: 10_000, timeout: 20_000 },
   );
+
+  await cacheDelete(trackingCacheKey(parcel.trackingNumber));
+
+  return updated;
 }
 
 export async function softDeleteParcel(
@@ -347,7 +451,7 @@ export async function softDeleteParcel(
 ): Promise<void> {
   const parcel = await prisma.parcel.findUnique({
     where: { id: parcelId, isDeleted: false },
-    select: { id: true, status: true, senderId: true },
+    select: { id: true, status: true, senderId: true, trackingNumber: true },
   });
 
   if (!parcel) throw new AppError(404, "Parcel not found.");
@@ -375,4 +479,55 @@ export async function softDeleteParcel(
     },
     { maxWait: 10_000, timeout: 20_000 },
   );
+
+  await cacheDelete(trackingCacheKey(parcel.trackingNumber));
+}
+
+const PROOF_UPLOADABLE_STATUSES: ParcelStatus[] = [
+  ParcelStatus.OUT_FOR_DELIVERY,
+  ParcelStatus.DELIVERED,
+];
+
+export async function uploadParcelProofOfDelivery(
+  parcelId: string,
+  actor: { id: string; role: Role },
+  file: Express.Multer.File,
+): Promise<ParcelWithRelations> {
+  const parcel = await prisma.parcel.findUnique({
+    where: { id: parcelId, isDeleted: false },
+    select: { id: true, status: true, courierId: true, trackingNumber: true },
+  });
+
+  if (!parcel) throw new AppError(404, "Parcel not found.");
+
+  if (actor.role === Role.COURIER && parcel.courierId !== actor.id) {
+    throw new AppError(403, "This parcel is not assigned to you.");
+  }
+
+  if (!PROOF_UPLOADABLE_STATUSES.includes(parcel.status)) {
+    throw new AppError(
+      409,
+      "Proof of delivery can only be attached while a parcel is out for delivery or delivered.",
+    );
+  }
+
+  const url = await uploadToCloudinary(file, "courier/proof-of-delivery");
+
+  const updated = await prisma.parcel.update({
+    where: { id: parcelId },
+    data: { proofOfDeliveryUrl: url },
+    include: PARCEL_INCLUDE,
+  });
+
+  await logAudit({
+    action: "PARCEL_PROOF_OF_DELIVERY_UPLOADED",
+    actorId: actor.id,
+    entityType: "Parcel",
+    entityId: parcelId,
+    newValue: { proofOfDeliveryUrl: url },
+  });
+
+  await cacheDelete(trackingCacheKey(parcel.trackingNumber));
+
+  return updated;
 }

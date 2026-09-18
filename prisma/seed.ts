@@ -122,6 +122,32 @@ const PARCELS: Array<Omit<ISeedParcel, 'origin' | 'destination'> & { origin: str
     weightKg: 2.1,
     paid: false,
   },
+  {
+    sender: 'customer2@courier.com',
+    courier: 'courier1@courier.com',
+    origin: 'HUB-GLS',
+    destination: 'HUB-CTG',
+    status: ParcelStatus.DELIVERY_FAILED,
+    receiverName: 'Nasrin Akter',
+    receiverPhone: '+8801711111116',
+    receiverAddress: '9 Agrabad C/A',
+    receiverCity: 'Chattogram',
+    weightKg: 1.2,
+    paid: true,
+  },
+  {
+    sender: 'customer1@courier.com',
+    courier: 'courier2@courier.com',
+    origin: 'HUB-UTR',
+    destination: 'HUB-GLS',
+    status: ParcelStatus.RETURNED,
+    receiverName: 'Imran Kabir',
+    receiverPhone: '+8801711111117',
+    receiverAddress: '5 Gulshan Circle 2',
+    receiverCity: 'Dhaka',
+    weightKg: 0.6,
+    paid: true,
+  },
 ];
 
 function feeFor(weightKg: number, originZone: string, destinationZone: string): number {

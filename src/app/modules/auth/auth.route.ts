@@ -30,3 +30,9 @@ authRoutes.post(
   validateRequest(refreshTokenZodSchema),
   authController.refreshToken,
 );
+authRoutes.post(
+  "/logout",
+  authRateLimiter,
+  validateRequest(refreshTokenZodSchema),
+  authController.logout,
+);

@@ -1,16 +1,18 @@
 import { Role } from "@prisma/client";
 import type { Request, Response } from "express";
-
+import { AppError } from "../../errors/AppError";
 import { catchAsync } from "../../utils/catchAsync";
 import { sendSuccess } from "../../utils/sendResponse";
 import {
   assignParcelToCourier,
   createParcel,
+  getParcelById,
   listMyParcels,
   listParcels,
   softDeleteParcel,
   trackParcel,
   updateParcelStatus,
+  uploadParcelProofOfDelivery,
 } from "./parcel.service";
 import type {
   AssignParcelInput,
@@ -45,6 +47,13 @@ export const getMyParcels = catchAsync(async (req: Request, res: Response) => {
   sendSuccess(res, "Your parcels fetched successfully.", { parcels }, meta, 200);
 });
 
+export const getParcelHandler = catchAsync(async (req: Request, res: Response) => {
+  const actor = { id: req.user!.id, role: req.user!.role };
+  const parcel = await getParcelById(String(req.params.id), actor);
+
+  sendSuccess(res, "Parcel fetched successfully.", { parcel }, undefined, 200);
+});
+
 export const trackParcelHandler = catchAsync(async (req: Request, res: Response) => {
   const result = await trackParcel(String(req.params.trackingNumber));
 
@@ -64,6 +73,15 @@ export const updateStatusHandler = catchAsync(async (req: Request, res: Response
   const parcel = await updateParcelStatus(String(req.params.id), actor, body);
 
   sendSuccess(res, `Parcel status updated to ${body.status}.`, { parcel }, undefined, 200);
+});
+
+export const uploadProofOfDeliveryHandler = catchAsync(async (req: Request, res: Response) => {
+  if (!req.file) throw new AppError(400, 'A photo file is required (field name: "photo").');
+
+  const actor = { id: req.user!.id, role: req.user!.role };
+  const parcel = await uploadParcelProofOfDelivery(String(req.params.id), actor, req.file);
+
+  sendSuccess(res, "Proof of delivery uploaded successfully.", { parcel }, undefined, 200);
 });
 
 export const deleteParcelHandler = catchAsync(async (req: Request, res: Response) => {
