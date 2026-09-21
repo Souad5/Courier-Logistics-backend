@@ -9,3 +9,7 @@ CLAUDE.md
 .vercel/
 coverage/
 .vercel
+prisma/*.js
+prisma/*.js.map
+prisma/*.d.ts
+prisma/*.d.ts.map
