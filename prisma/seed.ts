@@ -172,7 +172,16 @@ async function main(tx: Prisma.TransactionClient): Promise<void> {
   for (const u of USERS) {
     const user = await tx.user.upsert({
       where: { email: u.email },
-      update: {},
+      update: {
+        name: u.name,
+        phone: u.phone,
+        password,
+        role: u.role,
+        provider: AuthProvider.LOCAL,
+        isEmailVerified: true,
+        isAvailable: u.isAvailable ?? false,
+        isDeleted: false,
+      },
       create: {
         email: u.email,
         name: u.name,

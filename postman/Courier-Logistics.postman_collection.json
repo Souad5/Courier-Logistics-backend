@@ -1,0 +1,379 @@
+{
+  "info": {
+    "name": "Courier & Logistics API — POST/PATCH/PUT",
+    "description": "Write-endpoint requests (POST, PATCH, PUT) for the Courier & Logistics backend. Set {{baseUrl}}, {{accessToken}}, {{adminAccessToken}}, {{courierAccessToken}} in a Postman environment. Run Auth > Login (customer/courier/admin) first — each has a request-level script that saves the returned accessToken into the matching environment variable.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000/api/v1" },
+    { "key": "accessToken", "value": "" },
+    { "key": "courierAccessToken", "value": "" },
+    { "key": "adminAccessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "parcelId", "value": "" },
+    { "key": "hubId", "value": "" },
+    { "key": "originHubId", "value": "" },
+    { "key": "destinationHubId", "value": "" },
+    { "key": "courierId", "value": "" },
+    { "key": "userId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register (Customer or Courier)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Alice Rahman\",\n  \"email\": \"alice@example.com\",\n  \"password\": \"StrongPass123\",\n  \"phone\": \"+8801711111111\",\n  \"role\": \"CUSTOMER\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] }
+          }
+        },
+        {
+          "name": "Login — Customer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.tokens) {",
+                  "  pm.collectionVariables.set('accessToken', data.tokens.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', data.tokens.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"customer1@courier.com\",\n  \"password\": \"Password@123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "Login — Courier",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.tokens) pm.collectionVariables.set('courierAccessToken', data.tokens.accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"courier1@courier.com\",\n  \"password\": \"Password@123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "Login — Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.tokens) pm.collectionVariables.set('adminAccessToken', data.tokens.accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@courier.com\",\n  \"password\": \"Password@123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "Google Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idToken\": \"<Google-issued ID token — a signed JWT with 3 dot-separated segments, NOT the OAuth client ID>\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/google-login", "host": ["{{baseUrl}}"], "path": ["auth", "google-login"] }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/refresh-token", "host": ["{{baseUrl}}"], "path": ["auth", "refresh-token"] }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/logout", "host": ["{{baseUrl}}"], "path": ["auth", "logout"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Update My Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Alice R.\",\n  \"phone\": \"+8801700000000\",\n  \"avatarUrl\": \"https://res.cloudinary.com/demo/image/upload/avatar.jpg\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/users/me", "host": ["{{baseUrl}}"], "path": ["users", "me"] }
+          }
+        },
+        {
+          "name": "Update My Availability (Courier)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{courierAccessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isAvailable\": true\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/users/me/availability", "host": ["{{baseUrl}}"], "path": ["users", "me", "availability"] }
+          }
+        },
+        {
+          "name": "Change User Role (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"COURIER\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/role",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "role"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Hubs",
+      "item": [
+        {
+          "name": "Create Hub (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.hub) pm.collectionVariables.set('hubId', data.hub.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Gulshan Hub\",\n  \"code\": \"HUB-GLS\",\n  \"zoneCode\": \"inner-city\",\n  \"zoneName\": \"Inner City\",\n  \"address\": \"12 Gulshan Avenue\",\n  \"city\": \"Dhaka\",\n  \"lat\": 23.8,\n  \"lng\": 90.4\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/hubs", "host": ["{{baseUrl}}"], "path": ["hubs"] }
+          }
+        },
+        {
+          "name": "Update Hub (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Gulshan Hub (Updated)\",\n  \"city\": \"Dhaka\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/hubs/{{hubId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["hubs", "{{hubId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Parcels",
+      "item": [
+        {
+          "name": "Create Parcel (Customer)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.parcel) pm.collectionVariables.set('parcelId', data.parcel.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"PARCEL\",\n  \"weightKg\": 2.5,\n  \"dimensions\": \"30x20x15\",\n  \"originHubId\": \"{{originHubId}}\",\n  \"destinationHubId\": \"{{destinationHubId}}\",\n  \"senderName\": \"Alice Rahman\",\n  \"senderPhone\": \"+8801711111111\",\n  \"senderAddress\": \"House 5, Road 7, Dhanmondi\",\n  \"senderCity\": \"Dhaka\",\n  \"receiverName\": \"Carla Gomes\",\n  \"receiverPhone\": \"+8801711111112\",\n  \"receiverAddress\": \"22 Agrabad C/A\",\n  \"receiverCity\": \"Chattogram\",\n  \"notes\": \"Call before delivery\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/parcels", "host": ["{{baseUrl}}"], "path": ["parcels"] },
+            "description": "type: DOCUMENT | PARCEL | FRAGILE | PERISHABLE (default PARCEL). Fee is computed server-side — do not send a fee field."
+          }
+        },
+        {
+          "name": "Assign Courier to Parcel (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminAccessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courierId\": \"{{courierId}}\",\n  \"destinationHubId\": \"{{destinationHubId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/parcels/{{parcelId}}/assign",
+              "host": ["{{baseUrl}}"],
+              "path": ["parcels", "{{parcelId}}", "assign"]
+            },
+            "description": "destinationHubId is optional — only send it to re-route the parcel."
+          }
+        },
+        {
+          "name": "Update Parcel Status (Courier or Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{courierAccessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"PICKED_UP\",\n  \"location\": \"Gulshan Hub\",\n  \"note\": \"Parcel collected from sender\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/parcels/{{parcelId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["parcels", "{{parcelId}}", "status"]
+            },
+            "description": "Allowed transitions: PENDING->CANCELLED; ACCEPTED->PICKED_UP|CANCELLED; PICKED_UP->IN_TRANSIT|CANCELLED; IN_TRANSIT->OUT_FOR_DELIVERY|CANCELLED; OUT_FOR_DELIVERY->DELIVERED|DELIVERY_FAILED; DELIVERY_FAILED->OUT_FOR_DELIVERY|RETURN_TO_SENDER (capped retry attempts); RETURN_TO_SENDER->RETURNED."
+          }
+        },
+        {
+          "name": "Upload Proof of Delivery Photo (Courier or Admin)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{courierAccessToken}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "photo", "type": "file", "src": "" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/parcels/{{parcelId}}/proof-of-delivery",
+              "host": ["{{baseUrl}}"],
+              "path": ["parcels", "{{parcelId}}", "proof-of-delivery"]
+            },
+            "description": "multipart/form-data — field name must be exactly 'photo'. JPEG/PNG/WebP only, max 5MB. Do NOT set Content-Type manually; let Postman set the multipart boundary."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Initiate Stripe Checkout (Customer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"parcelId\": \"{{parcelId}}\",\n  \"successUrl\": \"http://localhost:3000/success\",\n  \"cancelUrl\": \"http://localhost:3000/cancel\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/payments/initiate", "host": ["{{baseUrl}}"], "path": ["payments", "initiate"] },
+            "description": "successUrl/cancelUrl are optional and MUST match an origin listed in CLIENT_URL, else 400."
+          }
+        },
+        {
+          "name": "Stripe Webhook (Stripe CLI only — do not call manually)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Stripe-Signature", "value": "t=...,v1=... (generated by the Stripe CLI/dashboard, not forgeable in Postman)" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": { "raw": "{{baseUrl}}/payments/webhook", "host": ["{{baseUrl}}"], "path": ["payments", "webhook"] },
+            "description": "Do not send this from Postman — signature verification will reject any manually-constructed request. Use: stripe listen --forward-to localhost:5000/api/v1/payments/webhook, then complete a real test-mode Checkout session."
+          }
+        }
+      ]
+    }
+  ]
+}
