@@ -4,8 +4,8 @@ import { catchAsync } from "../../utils/catchAsync";
 import { sendSuccess } from "../../utils/sendResponse";
 import { getDashboardStats, listAuditLogs } from "./auditLog.service";
 
-export const dashboardStats = catchAsync(async (_req: Request, res: Response) => {
-  const stats = await getDashboardStats();
+export const dashboardStats = catchAsync(async (req: Request, res: Response) => {
+  const stats = await getDashboardStats(Number(req.query.days) || 30);
 
   sendSuccess(res, "Dashboard statistics fetched successfully.", { stats }, undefined, 200);
 });

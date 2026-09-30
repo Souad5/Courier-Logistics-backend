@@ -12,6 +12,17 @@ export interface IDashboardStats {
   returnedParcels: number;
   totalFailedDeliveryAttempts: number;
   statusBreakdown: Array<{ status: ParcelStatus; count: number }>;
+  period: {
+    days: number;
+    from: string;
+    parcels: number;
+    revenue: number;
+    delivered: number;
+    previousParcels: number;
+    previousRevenue: number;
+    previousDelivered: number;
+    timeline: Array<{ date: string; parcels: number; delivered: number; revenue: number }>;
+  };
 }
 
 export interface IAuditEntry {
