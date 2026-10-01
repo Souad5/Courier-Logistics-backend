@@ -71,7 +71,7 @@ async function getPeriodStats(rawDays: number): Promise<IDashboardStats["period"
     previousParcels: previousParcels.length,
     previousRevenue: previousPayments._sum.amount ? Number(previousPayments._sum.amount) : 0,
     previousDelivered: previousParcels.filter((p) => p.status === "DELIVERED").length,
-    timeline: [...buckets.entries()].map(([date, values]) => ({ date, ...values })),
+    timeline: Array.from(buckets.entries()).map(([date, values]) => ({ date, ...values })),
   };
 }
 
