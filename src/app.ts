@@ -10,6 +10,9 @@ import { env } from "./config";
 
 const app: Express = express();
 
+// Trust proxy for Vercel / production load balancers
+app.set("trust proxy", 1);
+
 // Security headers
 app.use(helmet());
 

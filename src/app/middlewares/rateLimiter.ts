@@ -3,7 +3,8 @@ import rateLimit from "express-rate-limit";
 /**
  * Global API rate limiter. Requests beyond the limit receive the
  * standard error envelope. Skipped for the Stripe webhook so payment
- * retries are never blocked.
+ * retries are never blocked. Uses `keyGenerator` to extract client IP
+ * from X-Forwarded-For / Forwarded headers in proxied environments (Vercel).
  */
 export const apiRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -11,6 +12,13 @@ export const apiRateLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   skip: (req) => req.path.startsWith("/v1/payments/webhook"),
+  keyGenerator: (req) => {
+    const forwarded = req.headers["x-forwarded-for"];
+    if (typeof forwarded === "string") {
+      return forwarded.split(",")[0].trim();
+    }
+    return req.ip ?? "unknown";
+  },
   message: { success: false, message: "Too many requests, please try again later.", errors: [] },
 });
 
