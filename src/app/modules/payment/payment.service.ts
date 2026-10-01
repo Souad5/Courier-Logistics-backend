@@ -228,7 +228,7 @@ async function handleSessionCompleted(session: Stripe.Checkout.Session): Promise
         tx,
       });
     },
-    { maxWait: 10_000, timeout: 20_000 },
+    { maxWait: 5_000, timeout: 10_000 },
   );
 
   await cacheDelete(trackingCacheKey(payment.parcel.trackingNumber));
@@ -257,7 +257,7 @@ async function handleSessionFailed(session: Stripe.Checkout.Session): Promise<vo
         tx,
       });
     },
-    { maxWait: 10_000, timeout: 20_000 },
+    { maxWait: 5_000, timeout: 10_000 },
   );
 }
 

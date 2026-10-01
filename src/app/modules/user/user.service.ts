@@ -122,7 +122,7 @@ export async function updateUserRole(
 
       return result;
     },
-    { maxWait: 10_000, timeout: 20_000 },
+    { maxWait: 5_000, timeout: 10_000 },
   );
 
   return toUserPayload(updated);

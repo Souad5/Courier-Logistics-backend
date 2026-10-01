@@ -20,6 +20,8 @@ export const globalErrorHandler: ErrorRequestHandler = (err, req, res, _next) =>
     error = handleZodError(err);
   } else if (err instanceof Prisma.PrismaClientKnownRequestError) {
     error = mapPrismaError(err);
+  } else if (err instanceof Prisma.PrismaClientInitializationError || err instanceof Prisma.PrismaClientRustPanicError) {
+    error = new AppError(503, "Database service temporarily unavailable. Please retry.");
   } else if (err instanceof jwt.TokenExpiredError) {
     error = new AppError(401, "Your token has expired. Please login again.");
   } else if (err instanceof jwt.JsonWebTokenError) {
@@ -46,6 +48,7 @@ function mapPrismaError(err: Prisma.PrismaClientKnownRequestError): AppError {
     P2003: { statusCode: 400, message: "Related record does not exist (foreign key violation)." },
     P2025: { statusCode: 404, message: "The requested record was not found." },
     P2024: { statusCode: 503, message: "Database connection timeout. Please retry." },
+    P2034: { statusCode: 503, message: "Database transaction conflict. Please retry." },
   };
 
   const mapped = mapping[err.code];

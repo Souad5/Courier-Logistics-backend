@@ -163,7 +163,7 @@ export async function createParcel(
 
       return parcel;
     },
-    { maxWait: 10_000, timeout: 20_000 },
+    { maxWait: 5_000, timeout: 10_000 },
   );
 }
 
@@ -365,7 +365,7 @@ export async function assignParcelToCourier(
 
       return updated;
     },
-    { maxWait: 10_000, timeout: 20_000 },
+    { maxWait: 5_000, timeout: 10_000 },
   );
 }
 
@@ -437,7 +437,7 @@ export async function updateParcelStatus(
 
       return result;
     },
-    { maxWait: 10_000, timeout: 20_000 },
+    { maxWait: 5_000, timeout: 10_000 },
   );
 
   await cacheDelete(trackingCacheKey(parcel.trackingNumber));
@@ -477,7 +477,7 @@ export async function softDeleteParcel(
         tx,
       });
     },
-    { maxWait: 10_000, timeout: 20_000 },
+    { maxWait: 5_000, timeout: 10_000 },
   );
 
   await cacheDelete(trackingCacheKey(parcel.trackingNumber));

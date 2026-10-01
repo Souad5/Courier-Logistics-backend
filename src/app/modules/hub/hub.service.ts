@@ -171,7 +171,7 @@ export async function updateHub(
 
       return result;
     },
-    { maxWait: 10_000, timeout: 20_000 },
+    { maxWait: 5_000, timeout: 10_000 },
   );
 
   await invalidateHubListCache();
@@ -206,7 +206,7 @@ export async function softDeleteHub(hubId: string, actorId: string): Promise<voi
         tx,
       });
     },
-    { maxWait: 10_000, timeout: 20_000 },
+    { maxWait: 5_000, timeout: 10_000 },
   );
 
   await invalidateHubListCache();
